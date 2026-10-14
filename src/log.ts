@@ -14,6 +14,10 @@ export type LogEntry =
   | { type: 'assistant'; content: string; toolCalls: ToolCall[] }
   | { type: 'tool_result'; toolCallId: string; name: string; content: string; isError: boolean }
   | { type: 'turn_end'; turn: number; reason: TurnEndReason }
+  /** The working directory changed; the latest one is current. */
+  | { type: 'cwd'; path: string }
+  /** Runtime facts shown to the model as a user message, e.g. the current directory. */
+  | { type: 'context'; content: string }
 
 export class Session {
   readonly entries: LogEntry[]
@@ -39,6 +43,18 @@ export class Session {
     this.entries.push(entry)
   }
 
+  /** The latest recorded working directory, or undefined if it never changed. */
+  get cwd(): string | undefined {
+    const entry = this.entries.findLast(entry => entry.type === 'cwd')
+    return entry?.type === 'cwd' ? entry.path : undefined
+  }
+
+  /** The runtime context the model was last shown. */
+  get context(): string | undefined {
+    const entry = this.entries.findLast(entry => entry.type === 'context')
+    return entry?.type === 'context' ? entry.content : undefined
+  }
+
   get turns(): number {
     return this.entries.filter(entry => entry.type === 'turn_start').length
   }
@@ -58,11 +74,13 @@ export class Session {
   deriveMessages(): Message[] {
     return this.entries.flatMap((entry): Message[] => {
       switch (entry.type) {
-        case 'user': return [{ role: 'user', content: entry.content }]
+        case 'user':
+        case 'context': return [{ role: 'user', content: entry.content }]
         case 'assistant': return [{ role: 'assistant', content: entry.content, toolCalls: entry.toolCalls }]
         case 'tool_result': return [{ role: 'tool', toolCallId: entry.toolCallId, name: entry.name, content: entry.content, isError: entry.isError }]
         case 'turn_start':
-        case 'turn_end': return []
+        case 'turn_end':
+        case 'cwd': return []
       }
     })
   }

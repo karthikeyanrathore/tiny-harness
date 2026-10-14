@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
-import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
-import { builtinTools } from '../src/builtin.ts'
+import { builtinTools, currentDirectory } from '../src/builtin.ts'
 import { Hooks } from '../src/hooks.ts'
 import { OpenAiCompatibleLlm, toWire } from '../src/llm.ts'
 import type { Llm, LlmReply, LlmRequest } from '../src/llm.ts'
@@ -52,13 +52,15 @@ function lastResult(session: Session) {
 
 /** A fresh agent over a temp directory holding a.txt and b.md. */
 function setup(llm: Llm = new ScriptedLlm([])) {
-  const dir = mkdtempSync(join(tmpdir(), 'tiny-harness-'))
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tiny-harness-')))
   writeFileSync(join(dir, 'a.txt'), 'hello')
   writeFileSync(join(dir, 'b.md'), '# b')
-  const tools = new ToolRegistry()
-  for (const tool of builtinTools(dir)) tools.register(tool)
-  const hooks = new Hooks()
+  mkdirSync(join(dir, 'src'))
+  writeFileSync(join(dir, 'src', 'loop.ts'), 'loop')
   const session = new Session(join(dir, 'sessions', 's.jsonl'))
+  const tools = new ToolRegistry()
+  for (const tool of builtinTools(dir, session)) tools.register(tool)
+  const hooks = new Hooks()
   const agent = { llm, model: 'test', system: ['test'], tools, hooks, session, maxSteps: 5 }
   return { dir, tools, hooks, session, agent }
 }
@@ -194,7 +196,7 @@ describe('3. agent loop', () => {
   test('a tool call, then a final answer', async () => {
     const { agent, session } = setup(new ScriptedLlm([use('list_dir', { path: '.' }), say('two files')]))
     assert.equal(await runTurn(agent, 'what files are in this folder?'), 'two files')
-    assert.equal(lastResult(session)?.content, 'a.txt\nb.md\nsessions/')
+    assert.equal(lastResult(session)?.content, 'a.txt\nb.md\nsessions/\nsrc/')
     assert.deepEqual(types(session.entries), ['turn_start', 'user', 'assistant', 'tool_result', 'assistant', 'turn_end'])
   })
 
@@ -253,6 +255,49 @@ describe('4. the log is the source of truth', () => {
     const { session } = setup()
     appendFileSync(session.path, `${JSON.stringify({ type: 'turn_start', turn: 1 })}\n${JSON.stringify({ type: 'turn_end', turn: 1, reason: 'completed' })}\n`)
     assert.equal(new Session(session.path).turns, 1)
+  })
+})
+
+describe('4b. working directory', () => {
+  test('a cd carries over to later bash calls and to the file tools', async () => {
+    const { tools, dir } = setup()
+    await tools.execute({ id: '1', name: 'bash', args: { command: 'cd src' } })
+    assert.equal((await tools.execute({ id: '2', name: 'bash', args: { command: 'pwd' } })).content, `exit code: 0\n${dir}/src\n`)
+    assert.equal((await tools.execute({ id: '3', name: 'bash', args: { command: 'ls loop.ts' } })).content, 'exit code: 0\nloop.ts\n')
+    assert.equal((await tools.execute({ id: '4', name: 'read_file', args: { path: 'loop.ts' } })).content, 'loop')
+    await tools.execute({ id: '5', name: 'write_file', args: { path: 'new.txt', content: 'x' } })
+    assert.equal(readFileSync(join(dir, 'src', 'new.txt'), 'utf8'), 'x')
+  })
+
+  test('a cd outside the project is not kept, and the model is told why', async () => {
+    const { tools, session, dir } = setup()
+    const result = await tools.execute({ id: '1', name: 'bash', args: { command: 'cd .. && pwd' } })
+    assert.match(result.content, /note: the move to .* was not kept; tools stay in /)
+    assert.equal(session.cwd, undefined)
+    assert.equal((await tools.execute({ id: '2', name: 'bash', args: { command: 'pwd' } })).content, `exit code: 0\n${dir}\n`)
+  })
+
+  test('exit codes and output are unchanged by the folder tracking', async () => {
+    const { tools } = setup()
+    assert.equal((await tools.execute({ id: '1', name: 'bash', args: { command: 'printf no-newline; exit 3' } })).content, 'exit code: 3\nno-newline')
+    assert.equal((await tools.execute({ id: '2', name: 'bash', args: { command: 'false' } })).content, 'exit code: 1\n')
+  })
+
+  test('a resumed session keeps the folder', async () => {
+    const { tools, session, dir } = setup()
+    await tools.execute({ id: '1', name: 'bash', args: { command: 'cd src' } })
+    assert.equal(new Session(session.path).cwd, `${dir}/src`)
+  })
+
+  test('the model is told the folder once, and again only when it changes', async () => {
+    const llm = new ScriptedLlm([use('bash', { command: 'pwd' }), use('bash', { command: 'cd src' }), say('done')])
+    const { agent, session, dir } = setup(llm)
+    await runTurn({ ...agent, context: () => `Current directory: ${currentDirectory(session, dir)}` }, 'go')
+    const contexts = (step: number) => llm.requests[step]?.messages.filter(m => m.role === 'user' && m.content.startsWith('Current directory:')).map(m => m.role === 'user' ? m.content : '')
+    assert.deepEqual(contexts(0), [`Current directory: ${dir}`])
+    assert.deepEqual(contexts(1), [`Current directory: ${dir}`])
+    assert.deepEqual(contexts(2), [`Current directory: ${dir}`, `Current directory: ${dir}/src`])
+    assert.equal(llm.requests[2]?.messages.at(-1)?.role, 'user')
   })
 })
 
