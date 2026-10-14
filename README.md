@@ -53,15 +53,3 @@ LLM_API_KEY=sk-... npm start                         # a hosted API
 npm test         # offline; uses scripted model replies and a mock HTTP server
 npm run typecheck
 ```
-
-## Code
-
-Start at `src/cli.ts` (entry point), then `src/loop.ts` (`runTurn`, the agent loop).
-
-| File | Role |
-|---|---|
-| `src/cli.ts` | REPL; wires the model, tools, hooks and session together |
-| `src/loop.ts` | `runTurn`, the agent loop |
-| `src/tools.ts` | the tool implementations |
-| `src/model.ts` | the LLM interface |
-| `src/session.ts`| the session log |
