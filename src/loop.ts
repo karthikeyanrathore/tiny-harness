@@ -16,6 +16,8 @@ export type Agent = {
   hooks: Hooks
   session: Session
   maxSteps: number
+  /** Runtime facts for the model; a new message is logged only when the text changes. */
+  context?: () => string
 }
 
 /** Run one turn and return the model's final text. */
@@ -32,6 +34,8 @@ export async function runTurn(agent: Agent, input: string): Promise<string> {
   try {
     while (steps < agent.maxSteps) {
       steps++
+      const context = agent.context?.()
+      if (context !== undefined && context !== session.context) session.append({ type: 'context', content: context })
       const request = await hooks.run('request', {
         model: agent.model,
         system: agent.system.join('\n\n'),

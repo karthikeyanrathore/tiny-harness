@@ -6,7 +6,7 @@
  */
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
-import { builtinTools } from './builtin.ts'
+import { builtinTools, currentDirectory } from './builtin.ts'
 import { Hooks } from './hooks.ts'
 import { OpenAiCompatibleLlm } from './llm.ts'
 import { Session } from './log.ts'
@@ -26,8 +26,10 @@ async function readLine(prompt: string): Promise<string | undefined> {
   return next.done === true ? undefined : next.value
 }
 
+const root = process.cwd()
+const session = new Session(sessionPath)
 const tools = new ToolRegistry()
-for (const tool of builtinTools(process.cwd())) tools.register(tool)
+for (const tool of builtinTools(root, session)) tools.register(tool)
 const hooks = new Hooks()
 approval(hooks, async question => /^y(es)?$/i.test((await readLine(question)) ?? ''), ['bash', 'write_file', 'fetch_url'])
 truncate(hooks, 2000)
@@ -38,13 +40,14 @@ const agent = {
   model: process.env.LLM_MODEL ?? 'gemma4:31b-cloud',
   system: [
     'You are a coding assistant.',
-    `The current directory is ${process.cwd()}; use relative paths such as "." for it.`,
+    'Relative paths are resolved against the current directory, which is given in "Current directory:" messages.',
     'Use tools to inspect and change files. Answer briefly.',
   ],
   tools,
   hooks,
-  session: new Session(sessionPath),
+  session,
   maxSteps: 10,
+  context: () => `Current directory: ${currentDirectory(session, root)}`,
 }
 
 console.log(`session: ${sessionId}  model: ${agent.model}  (type "exit" to quit)`)
