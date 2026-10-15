@@ -72,7 +72,7 @@ flowchart TD
     end
 
     END -->|"completed / step_limit"| P["print answer"] --> F
-    END -->|"error"| CRASH(["CLI crashes — see TODO.md"])
+    END -->|"error"| CRASH(["CLI crashes — see ROADMAP.md"])
 
     %% ── Session log ──
     LOG[("sessions/SESSION_ID.jsonl<br/>append-only log")]
