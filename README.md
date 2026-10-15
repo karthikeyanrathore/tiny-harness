@@ -29,11 +29,12 @@ Sessions are saved as `sessions/<session-id>.jsonl`.
 
 ## How it works
 
-Solid arrows show the order the code runs in; dotted arrows are reads and writes to the session log. After tool results are logged, the next step rebuilds the request from the log, which is how the model sees them.
+### Startup and prompt loop
+
+`src/cli.ts` sets everything up once, then calls `runTurn` for each prompt. Dotted arrows are reads and writes to the session log.
 
 ```mermaid
 flowchart TD
-    %% ── Startup (src/cli.ts, runs once) ──
     A(["npm start → node src/cli.ts"]) --> B["Read --resume id, pick session file"]
     B --> C["new Session(path) — log.ts<br/>load .jsonl, close any interrupted turn"]
     C --> D["builtinTools(root, session) → tools.register()<br/>list_dir · read_file · write_file · fetch_url · bash"]
@@ -41,48 +42,71 @@ flowchart TD
     E --> F[/"readLine('> ')"/]
 
     F -->|"exit / end of input"| Z(["process.exit"])
-    F -->|"prompt"| T0
+    F -->|"prompt"| RT[["runTurn(agent, input) — loop.ts<br/>see the sequence diagram below"]]
+    RT -->|"returns the answer"| P["print answer"] --> F
+    RT -->|"throws on a model error"| CRASH(["CLI crashes — see ROADMAP.md"])
 
-    %% ── One turn (src/loop.ts runTurn) ──
-    subgraph TURN["runTurn(agent, input) — loop.ts"]
-        T0["append turn_start + user"] --> S0{"steps < maxSteps?"}
-        S0 -->|no| LIM["reason = step_limit"]
-        S0 -->|yes| CX{"Current directory<br/>changed since last told?"}
-        CX -->|yes| CXA["append context message"] --> RQ
-        CX -->|no| RQ["Build request<br/>system + session.deriveMessages() + tools.schemas()"]
-        RQ --> H1["hook: request — hooks.ts"]
-        H1 --> LLM["llm.call() — llm.ts<br/>POST /chat/completions to Ollama"]
-        LLM -->|"HTTP / network error"| ERR["closeOpenCalls()<br/>reason = error"]
-        LLM --> AS["append assistant message"]
-        AS --> TC{"Tool calls<br/>in the reply?"}
-        TC -->|no| DONE["reason = completed<br/>answer = reply text"]
-        TC -->|yes| PRE["hook: pre-execute<br/>approval asks y/N for bash · write_file · fetch_url"]
-        PRE --> AL{"Allowed?"}
-        AL -->|no| DEN["result = denied"]
-        AL -->|yes| EX["tools.execute() — tools.ts<br/>validate args, run tool"]
-        EX -.->|"bash ended in a new folder"| CWD["append cwd entry — builtin.ts"]
-        EX --> POST
-        DEN --> POST["hook: post-execute<br/>truncate long output"]
-        POST --> TR["append tool_result"]
-        TR -->|"more calls"| PRE
-        TR -->|"all calls done → next step"| S0
-        LIM --> END
-        DONE --> END
-        ERR --> END["append turn_end<br/>hook: turn-end → stats prints line"]
-    end
-
-    END -->|"completed / step_limit"| P["print answer"] --> F
-    END -->|"error"| CRASH(["CLI crashes — see ROADMAP.md"])
-
-    %% ── Session log ──
     LOG[("sessions/SESSION_ID.jsonl<br/>append-only log")]
     C -.->|read| LOG
-    T0 -.-> LOG
-    CXA -.-> LOG
-    AS -.-> LOG
-    TR -.-> LOG
-    CWD -.-> LOG
-    RQ -.->|"deriveMessages()"| LOG
+    RT -.->|"read + append"| LOG
+```
+
+### One turn: `runTurn`
+
+A turn handles one prompt. Each step is one model call plus the tool calls the reply asks for. The model sees earlier tool results because every step rebuilds the messages from the log with `deriveMessages()`.
+
+```mermaid
+sequenceDiagram
+    participant CLI as cli.ts
+    participant Turn as runTurn (loop.ts)
+    participant Log as Session (log.ts)
+    participant Hooks as Hooks + plugins
+    participant LLM as llm.ts → Ollama
+    participant Tools as ToolRegistry (tools.ts)
+
+    CLI->>Turn: runTurn(agent, input)
+    Turn->>Log: append turn_start, user
+
+    loop each step, while steps < maxSteps
+        opt current directory changed since the model was last told
+            Turn->>Log: append context "Current directory: …"
+        end
+        Turn->>Log: deriveMessages()
+        Log-->>Turn: messages, including earlier tool results
+        Turn->>Hooks: run "request" with model, system, messages, tool schemas
+        Hooks-->>Turn: request
+        Turn->>LLM: llm.call(request) → POST /chat/completions
+        LLM-->>Turn: reply: content + toolCalls
+        Turn->>Log: append assistant
+        break the reply has no tool calls
+            Note over Turn: reason = completed, answer = reply text
+        end
+        loop each tool call in the reply
+            Turn->>Hooks: run "pre-execute" with call, allow = true
+            Note over Hooks: approval asks y/N for bash, write_file, fetch_url
+            Hooks-->>Turn: decision
+            alt allowed
+                Turn->>Tools: execute(call)
+                opt bash ended in a new folder inside the project
+                    Tools->>Log: append cwd
+                end
+                Tools-->>Turn: result
+            else denied
+                Note over Turn: result = "denied: reason"
+            end
+            Turn->>Hooks: run "post-execute" with call, result
+            Note over Hooks: truncate cuts output over 2000 characters
+            Hooks-->>Turn: result
+            Turn->>Log: append tool_result
+        end
+    end
+
+    Note over Turn: if the steps ran out: reason = step_limit
+    Note over Turn,LLM: if llm.call throws: closeOpenCalls(), reason = error, then rethrow after turn_end
+    Turn->>Log: append turn_end with turn, reason
+    Turn->>Hooks: run "turn-end"
+    Note over Hooks: stats prints [turn N: reason, steps, tool calls]
+    Turn-->>CLI: answer
 ```
 
 ## Use another model
