@@ -27,6 +27,64 @@ Try: `what files are in this folder?`, `read package.json`, `run ls -la`, `summa
 
 Sessions are saved as `sessions/<session-id>.jsonl`.
 
+## How it works
+
+Solid arrows show the order the code runs in; dotted arrows are reads and writes to the session log. After tool results are logged, the next step rebuilds the request from the log, which is how the model sees them.
+
+```mermaid
+flowchart TD
+    %% ── Startup (src/cli.ts, runs once) ──
+    A(["npm start → node src/cli.ts"]) --> B["Read --resume id, pick session file"]
+    B --> C["new Session(path) — log.ts<br/>load .jsonl, close any interrupted turn"]
+    C --> D["builtinTools(root, session) → tools.register()<br/>list_dir · read_file · write_file · fetch_url · bash"]
+    D --> E["Register plugins on hooks — plugins.ts<br/>approval · truncate · stats"]
+    E --> F[/"readLine('> ')"/]
+
+    F -->|"exit / end of input"| Z(["process.exit"])
+    F -->|"prompt"| T0
+
+    %% ── One turn (src/loop.ts runTurn) ──
+    subgraph TURN["runTurn(agent, input) — loop.ts"]
+        T0["append turn_start + user"] --> S0{"steps < maxSteps?"}
+        S0 -->|no| LIM["reason = step_limit"]
+        S0 -->|yes| CX{"Current directory<br/>changed since last told?"}
+        CX -->|yes| CXA["append context message"] --> RQ
+        CX -->|no| RQ["Build request<br/>system + session.deriveMessages() + tools.schemas()"]
+        RQ --> H1["hook: request — hooks.ts"]
+        H1 --> LLM["llm.call() — llm.ts<br/>POST /chat/completions to Ollama"]
+        LLM -->|"HTTP / network error"| ERR["closeOpenCalls()<br/>reason = error"]
+        LLM --> AS["append assistant message"]
+        AS --> TC{"Tool calls<br/>in the reply?"}
+        TC -->|no| DONE["reason = completed<br/>answer = reply text"]
+        TC -->|yes| PRE["hook: pre-execute<br/>approval asks y/N for bash · write_file · fetch_url"]
+        PRE --> AL{"Allowed?"}
+        AL -->|no| DEN["result = denied"]
+        AL -->|yes| EX["tools.execute() — tools.ts<br/>validate args, run tool"]
+        EX -.->|"bash ended in a new folder"| CWD["append cwd entry — builtin.ts"]
+        EX --> POST
+        DEN --> POST["hook: post-execute<br/>truncate long output"]
+        POST --> TR["append tool_result"]
+        TR -->|"more calls"| PRE
+        TR -->|"all calls done → next step"| S0
+        LIM --> END
+        DONE --> END
+        ERR --> END["append turn_end<br/>hook: turn-end → stats prints line"]
+    end
+
+    END -->|"completed / step_limit"| P["print answer"] --> F
+    END -->|"error"| CRASH(["CLI crashes — see TODO.md"])
+
+    %% ── Session log ──
+    LOG[("sessions/SESSION_ID.jsonl<br/>append-only log")]
+    C -.->|read| LOG
+    T0 -.-> LOG
+    CXA -.-> LOG
+    AS -.-> LOG
+    TR -.-> LOG
+    CWD -.-> LOG
+    RQ -.->|"deriveMessages()"| LOG
+```
+
 ## Use another model
 
 Point it at any OpenAI-compatible `/chat/completions` endpoint:
