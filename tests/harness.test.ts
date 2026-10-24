@@ -5,6 +5,9 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
+import { pathToFileURL } from 'node:url'
+import calendar, { calendarTools } from '../addons/calendar/index.ts'
+import { loadAddons } from '../src/addons.ts'
 import { builtinTools, currentDirectory } from '../src/builtin.ts'
 import { Hooks } from '../src/hooks.ts'
 import { OpenAiCompatibleLlm, toWire } from '../src/llm.ts'
@@ -143,7 +146,7 @@ describe('2. tool registry', () => {
   test('schemas carry only name, description and parameters', () => {
     const { tools } = setup()
     for (const schema of tools.schemas()) assert.deepEqual(Object.keys(schema), ['name', 'description', 'parameters'])
-    assert.deepEqual(tools.schemas().map(s => s.name), ['bash', 'fetch_url', 'google_calendar_add_event', 'google_calendar_delete_event', 'google_calendar_list_events', 'list_dir', 'read_file', 'write_file'])
+    assert.deepEqual(tools.schemas().map(s => s.name), ['bash', 'fetch_url', 'list_dir', 'read_file', 'write_file'])
   })
 
   test('bad calls become error results instead of throwing', async () => {
@@ -203,9 +206,8 @@ function calendarSetup() {
     "if (args[1] === 'missing') { console.error('An error occurred: <HttpError 404>'); process.exit(1) }",
     'console.log(JSON.stringify({ args, cwd: process.cwd() }))',
   ].join('\n'))
-  const session = new Session(join(dir, 'sessions', 's.jsonl'))
   const tools = new ToolRegistry()
-  for (const tool of builtinTools(dir, session, { python: process.execPath, script, cwd: project })) tools.register(tool)
+  for (const tool of calendarTools({ python: process.execPath, script, cwd: project })) tools.register(tool)
   return { dir, project, tools }
 }
 
@@ -213,6 +215,52 @@ function calendarSetup() {
 function ranWith(content: string): { args: string[]; cwd: string } {
   return JSON.parse(content)
 }
+
+describe('2a. add-ons', () => {
+  test('without an addons folder the harness has no add-ons', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tiny-harness-addons-'))
+    assert.deepEqual(await loadAddons(pathToFileURL(join(dir, 'addons/'))), [])
+  })
+
+  test('each addons/<name>/index.ts is loaded with its tools, approvals and commands', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tiny-harness-addons-'))
+    mkdirSync(join(dir, 'greet'))
+    writeFileSync(join(dir, 'greet', 'index.ts'), "export default () => ({ tools: [{ name: 'hello', description: 'x', parameters: { type: 'object', properties: {} }, execute: async () => 'hi' }], needsApproval: ['hello'], commands: { 'install-greet': async () => {} } })")
+    mkdirSync(join(dir, 'no-index'))
+    const addons = await loadAddons(pathToFileURL(`${dir}/`))
+    assert.deepEqual(addons.map(a => ({ tools: a.tools.map(t => t.name), needsApproval: a.needsApproval, commands: Object.keys(a.commands) })), [
+      { tools: ['hello'], needsApproval: ['hello'], commands: ['install-greet'] },
+    ])
+  })
+
+  test('loading again picks up what a command set up', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tiny-harness-addons-'))
+    const marker = join(dir, 'set-up')
+    mkdirSync(join(dir, 'greet'))
+    writeFileSync(join(dir, 'greet', 'index.ts'), [
+      "import { existsSync, writeFileSync } from 'node:fs'",
+      `const marker = ${JSON.stringify(marker)}`,
+      "const hello = { name: 'hello', description: 'x', parameters: { type: 'object', properties: {} }, execute: async () => 'hi' }",
+      "export default () => ({ tools: existsSync(marker) ? [hello] : [], needsApproval: [], commands: { 'install-greet': async () => writeFileSync(marker, '') } })",
+    ].join('\n'))
+    const url = pathToFileURL(`${dir}/`)
+    const [before] = await loadAddons(url)
+    assert.deepEqual(before?.tools, [])
+    await before?.commands['install-greet']?.()
+    const [after] = await loadAddons(url)
+    assert.deepEqual(after?.tools.map(t => t.name), ['hello'])
+  })
+
+  test('the calendar add-on offers /install-gcal always, and its tools only once its Python exists', () => {
+    const script = join(tmpdir(), 'gcal_tool.py')
+    const notSetUp = calendar({ python: join(tmpdir(), 'no-such-venv', 'python3'), script, cwd: tmpdir() })
+    assert.deepEqual(notSetUp.tools, [])
+    assert.deepEqual(Object.keys(notSetUp.commands), ['install-gcal'])
+    const ready = calendar({ python: process.execPath, script, cwd: tmpdir() })
+    assert.deepEqual(ready.tools.map(t => t.name), ['google_calendar_add_event', 'google_calendar_list_events', 'google_calendar_delete_event'])
+    assert.deepEqual(ready.needsApproval, ['google_calendar_add_event', 'google_calendar_delete_event'])
+  })
+})
 
 describe('2b. calendar tools', () => {
   test('add passes the event to the script in order, in the project folder', async () => {
@@ -406,7 +454,7 @@ describe('5. hooks and plugins', () => {
     const { agent, hooks } = setup(llm)
     hooks.on('request', request => ({ ...request, tools: request.tools.filter(tool => tool.name !== 'list_dir') }))
     await runTurn(agent, 'list files')
-    assert.deepEqual(llm.requests[0]?.tools.map(tool => tool.name), ['bash', 'fetch_url', 'google_calendar_add_event', 'google_calendar_delete_event', 'google_calendar_list_events', 'read_file', 'write_file'])
+    assert.deepEqual(llm.requests[0]?.tools.map(tool => tool.name), ['bash', 'fetch_url', 'read_file', 'write_file'])
   })
 
   test('a disposed listener stops running', async () => {

@@ -1,11 +1,10 @@
 #!/bin/sh
-# Launcher installed as /usr/bin/tiny-harness: runs the harness with the bundled Node and keeps
-# per-user files in the XDG folders (sessions and the calendar venv in data, Google sign-in in config).
+# Launcher installed as /usr/bin/tiny-harness: runs the harness with the bundled Node and keeps per-user
+# files in the XDG folders (sessions in data; add-ons keep their own files in data and config subfolders).
 LIB=/usr/lib/tiny-harness
+CALENDAR="$LIB/addons/calendar"
 export TINY_HARNESS_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/tiny-harness"
 export TINY_HARNESS_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tiny-harness"
-export TINY_HARNESS_PYTHON="$TINY_HARNESS_DATA_DIR/venv/bin/python3"
-mkdir -p "$TINY_HARNESS_CONFIG_DIR"
 
 case "$1" in
   -h|--help)
@@ -13,23 +12,24 @@ case "$1" in
 Usage:
   tiny-harness                      start the harness in the current folder
   tiny-harness --resume <id>        continue a saved session
-  tiny-harness calendar-setup       set up Google Calendar (once)
+
+Inside the harness, /help lists commands. With the Calendar add-on (package tiny-harness-calendar):
+  /install-gcal                     set up Google Calendar (once), at the harness prompt
+  tiny-harness calendar-setup       the same, from the shell
   tiny-harness gcal <command>       run the calendar script directly (login, add, list, delete)
 
 Model settings: LLM_BASE_URL, LLM_MODEL, LLM_API_KEY (default: gemma4:31b-cloud through local Ollama).
 EOF
     ;;
-  calendar-setup)
-    shift
-    exec bash "$LIB/calendar-setup" "$@"
-    ;;
-  gcal)
-    shift
-    if [ ! -x "$TINY_HARNESS_PYTHON" ]; then
-      echo "Google Calendar is not set up yet. Run: tiny-harness calendar-setup" >&2
+  calendar-setup|gcal)
+    if [ ! -x "$CALENDAR/$1" ]; then
+      echo "The Calendar add-on is not installed. Get tiny-harness-calendar_<version>_all.deb from the" >&2
+      echo "releases page and run: sudo apt install ./tiny-harness-calendar_*_all.deb" >&2
       exit 1
     fi
-    cd "$TINY_HARNESS_CONFIG_DIR" && exec "$TINY_HARNESS_PYTHON" "$LIB/scripts/gcal_tool.py" "$@"
+    command=$1
+    shift
+    exec "$CALENDAR/$command" "$@"
     ;;
   *)
     exec "$LIB/node/bin/node" "$LIB/src/cli.ts" "$@"

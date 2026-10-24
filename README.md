@@ -7,12 +7,22 @@ A minimal coding-agent harness: a model chooses tools, the harness runs them, an
 Download the `.deb` for your CPU (`amd64` for most PCs, `arm64` for ARM machines) from the [latest release](https://github.com/karthikeyanrathore/tiny-harness/releases/latest), then:
 
 ```sh
-sudo apt install ./tiny-harness_*_amd64.deb   # Ubuntu 22.04 or later; brings its own Node.js
+sudo apt install ./tiny-harness_*_amd64.deb   # Ubuntu 22.04 or later; brings its own Node.js, no Python
 tiny-harness                                  # start it in any folder
-tiny-harness calendar-setup                   # once, to use Google Calendar: a guided 5-minute setup
 ```
 
-`calendar-setup` installs the Google libraries for your user, walks you through creating your own free Google OAuth client, and signs you in. Sessions are kept in `~/.local/share/tiny-harness/sessions`, the Google sign-in in `~/.config/tiny-harness`. Remove it with `sudo apt remove tiny-harness`.
+Sessions are kept in `~/.local/share/tiny-harness/sessions`. Remove it with `sudo apt remove tiny-harness`.
+
+### Optional: Google Calendar add-on
+
+Only if you want the model to manage your calendar. It brings Python and the Google libraries, so it is a separate package (`_all` works on every CPU):
+
+```sh
+sudo apt install ./tiny-harness-calendar_*_all.deb
+tiny-harness                                  # then type /install-gcal: a guided 5-minute setup, once
+```
+
+`/install-gcal` (or `tiny-harness calendar-setup` from the shell) installs the Google libraries for your user, walks you through creating your own free Google OAuth client, and signs you in. Its files are kept in `~/.local/share/tiny-harness/calendar` and `~/.config/tiny-harness/calendar`. Until setup is done the calendar tools stay hidden from the model. Remove it with `sudo apt remove tiny-harness-calendar`.
 
 ## Requirements (from source)
 
@@ -46,17 +56,24 @@ Sessions are saved as `sessions/<session-id>.jsonl`.
 - [x] **`write_file`** *(approval y/n)* — create or overwrite a UTF-8 text file.
 - [x] **`fetch_url`** *(approval y/n)* — fetch an http(s) page and return its text without HTML tags.
 - [x] **`bash`** *(approval y/n)* — run a shell command; a `cd` carries over to later calls and the other tools, but only inside the project.
+
+### Add-ons
+
+Optional tools live in `addons/<name>/`. The harness loads each `addons/<name>/index.ts` at startup; an add-on that is not set up offers no tools. Add-ons can bring commands, typed at the prompt with a leading `/` (`/help` lists them); after a command the add-ons are loaded again, so a finished setup works at once. The core package ships without `addons/`.
+
+**Calendar** (`addons/calendar/`), set up with **`/install-gcal`**:
+
 - [x] **`google_calendar_add_event`** *(approval y/n)* — add an event to your primary Google Calendar.
 - [x] **`google_calendar_list_events`** — list events between two times, with their ids.
 - [x] **`google_calendar_delete_event`** *(approval y/n)* — delete an event by id.
 
-From source, the calendar tools run `scripts/gcal_tool.py` with the project's `.venv` and need a one-time Google sign-in (the installed package does this with `tiny-harness calendar-setup`):
+From source, `/install-gcal` works the same way but uses the project's `.venv`, with `credentials.json` and `token.json` in the project folder. By hand:
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python3 -m pip install --only-binary=cryptography -r scripts/requirements.txt
+.venv/bin/python3 -m pip install --only-binary=cryptography -r addons/calendar/requirements.txt
 # put the OAuth "Desktop app" client from Google Cloud Console in credentials.json, then:
-scripts/gcal login   # opens the browser once, saves token.json
+addons/calendar/gcal login   # opens the browser once, saves token.json
 ```
 
 `credentials.json` and `token.json` are git-ignored.
@@ -71,7 +88,7 @@ scripts/gcal login   # opens the browser once, saves token.json
 flowchart TD
     A(["npm start → node src/cli.ts"]) --> B["Read --resume id, pick session file"]
     B --> C["new Session(path) — log.ts<br/>load .jsonl, close any interrupted turn"]
-    C --> D["builtinTools(root, session) → tools.register()<br/>list_dir · read_file · write_file · fetch_url · bash<br/>google_calendar_add / list / delete"]
+    C --> D["builtinTools(root, session) → tools.register()<br/>list_dir · read_file · write_file · fetch_url · bash<br/>+ tools from addons/ (loadAddons)"]
     D --> E["Register plugins on hooks — plugins.ts<br/>approval · truncate · stats"]
     E --> F[/"readLine('> ')"/]
 
@@ -170,10 +187,11 @@ npm test         # offline; uses scripted model replies and a mock HTTP server
 npm run typecheck
 ```
 
-## Build the Ubuntu package
+## Build the Ubuntu packages
 
 ```sh
 scripts/build-deb.sh amd64    # or arm64; writes dist/tiny-harness_<version>_<arch>.deb
+                              # and the add-on dist/tiny-harness-calendar_<version>_all.deb
 ```
 
-The `release` workflow builds both, installs each on clean Ubuntu 22.04 and 24.04 (`packaging/test-install.sh`), and on a `v*` tag publishes them as a GitHub release. To release: bump `version` in `package.json`, then `git tag v<version> && git push origin v<version>`.
+The `release` workflow builds them for amd64 and arm64, installs them on clean Ubuntu 22.04 and 24.04 (`packaging/test-install.sh`: the core alone first, checking no Python comes with it, then the add-on), and on a `v*` tag publishes them as a GitHub release. To release: bump `version` in `package.json`, then `git tag v<version> && git push origin v<version>`.

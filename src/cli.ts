@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
+import { loadAddons } from './addons.ts'
 import { builtinTools, currentDirectory } from './builtin.ts'
 import { Hooks } from './hooks.ts'
 import { OpenAiCompatibleLlm } from './llm.ts'
@@ -45,10 +46,18 @@ const root = process.cwd()
 const session = new Session(sessionPath)
 const tools = new ToolRegistry()
 for (const tool of builtinTools(root, session)) tools.register(tool)
+let addons = await loadAddons()
+let removeAddonTools = registerAddonTools()
+
+/** Register what the add-ons offer now; returns a function that takes those tools away again. */
+function registerAddonTools(): () => void {
+  const removers = addons.flatMap(addon => addon.tools.map(tool => tools.register(tool)))
+  return () => { for (const remove of removers) remove() }
+}
 const hooks = new Hooks()
 // Bold yellow header in a terminal, so approval prompts stand out from the model's text.
 const highlight = (question: string) => process.stdout.isTTY ? question.replace(/^.*/, header => `\x1b[1;33m${header}\x1b[0m`) : question
-approval(hooks, async question => /^y(es)?$/i.test((await readLine(highlight(question))) ?? ''), ['bash', 'write_file', 'fetch_url', 'google_calendar_add_event', 'google_calendar_delete_event'])
+approval(hooks, async question => /^y(es)?$/i.test((await readLine(highlight(question))) ?? ''), ['bash', 'write_file', 'fetch_url', ...addons.flatMap(addon => addon.needsApproval)])
 truncate(hooks, 2000)
 stats(hooks, line => console.log(line))
 
@@ -119,10 +128,40 @@ if (process.stdout.isTTY) {
 } else {
   console.log(`session: ${sessionId}  model: ${agent.model}  (type "exit" to quit)`)
 }
+/**
+ * A line starting with "/" is a command for the harness, not a prompt: /help, or one an add-on brings, such
+ * as /install-gcal. A command may ask its own questions, so it gets the terminal to itself; afterwards the
+ * add-ons are loaded again, so whatever it set up can be used straight away.
+ */
+async function runCommand(name: string): Promise<void> {
+  const commands: Record<string, () => Promise<void>> = Object.assign({}, ...addons.map(addon => addon.commands))
+  if (name === 'help') {
+    console.log(['/help', ...Object.keys(commands).map(command => `/${command}`)].join('\n'))
+    return
+  }
+  const command = commands[name]
+  if (command === undefined) {
+    console.log(`No add-on provides /${name}. Add-ons are separate packages; install the one you need first (see the README). /help lists the commands you have.`)
+    return
+  }
+  rl.pause()
+  if (process.stdin.isTTY) process.stdin.setRawMode(false)
+  try {
+    await command()
+  } finally {
+    if (process.stdin.isTTY) process.stdin.setRawMode(true)
+    rl.resume()
+  }
+  removeAddonTools()
+  addons = await loadAddons()
+  removeAddonTools = registerAddonTools()
+}
+
 while (true) {
   const input = await readPrompt()
   if (input === undefined || input.trim() === 'exit') break
   if (input.trim() === '') continue
-  console.log(await runTurn(agent, input))
+  if (input.trim().startsWith('/')) await runCommand(input.trim().slice(1))
+  else console.log(await runTurn(agent, input))
 }
 process.exit(0)

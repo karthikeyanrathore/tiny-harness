@@ -12,7 +12,7 @@ from googleapiclient.errors import HttpError
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
-SETUP_HINT = "Run: tiny-harness calendar-setup (or scripts/gcal login in a checkout)"
+SETUP_HINT = "Run /install-gcal in tiny-harness (or: tiny-harness calendar-setup)"
 
 def login():
     """Signs in through the browser once and saves token.json; needs credentials.json from Google Cloud Console."""
