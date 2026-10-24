@@ -13,17 +13,21 @@ import type { ToolDefinition } from './tools.ts'
 /** Printed after each bash command so the harness learns the folder the shell ended in. */
 const CWD_MARK = '__TINY_HARNESS_CWD__'
 
-/** Adds a Google Calendar event; reads credentials.json and token.json from the project root. */
+/** The calendar script; it runs in the project folder, where credentials.json and token.json live. */
 const GCAL_SCRIPT = fileURLToPath(new URL('../scripts/gcal_tool.py', import.meta.url))
 /** The project venv's Python, which has the Google client libraries installed. */
 const GCAL_PYTHON = fileURLToPath(new URL('../.venv/bin/python3', import.meta.url))
+const PROJECT_DIR = fileURLToPath(new URL('..', import.meta.url))
 
 /** The folder every tool works in: the last one recorded in the log, else `root`. */
 export function currentDirectory(session: Session, root: string): string {
   return session.cwd ?? realpathSync(root)
 }
 
-export function builtinTools(root: string, session: Session): ToolDefinition[] {
+/** How the calendar tools run their script: the program, the script it runs, and the folder to run it in. */
+export type CalendarCommand = { python: string; script: string; cwd: string }
+
+export function builtinTools(root: string, session: Session, calendar: CalendarCommand = { python: GCAL_PYTHON, script: GCAL_SCRIPT, cwd: PROJECT_DIR }): ToolDefinition[] {
   root = realpathSync(root)
   const cwd = () => currentDirectory(session, root)
 
@@ -114,7 +118,7 @@ export function builtinTools(root: string, session: Session): ToolDefinition[] {
         required: ['summary', 'startTime', 'endTime'],
       },
       execute({ summary, startTime, endTime, description }) {
-        return gcal(root, ['add', summary as string, startTime as string, endTime as string, (description as string | undefined) ?? ''])
+        return gcal(calendar, ['add', summary as string, startTime as string, endTime as string, (description as string | undefined) ?? ''])
       },
     },
     {
@@ -130,7 +134,7 @@ export function builtinTools(root: string, session: Session): ToolDefinition[] {
         required: ['timeMin', 'timeMax'],
       },
       execute({ timeMin, timeMax, query }) {
-        return gcal(root, ['list', timeMin as string, timeMax as string, (query as string | undefined) ?? ''])
+        return gcal(calendar, ['list', timeMin as string, timeMax as string, (query as string | undefined) ?? ''])
       },
     },
     {
@@ -138,16 +142,16 @@ export function builtinTools(root: string, session: Session): ToolDefinition[] {
       description: 'Delete (cancel) an event from the primary Google Calendar by its id, as shown by google_calendar_list_events.',
       parameters: { type: 'object', properties: { eventId: { type: 'string', description: 'Event id' } }, required: ['eventId'] },
       execute({ eventId }) {
-        return gcal(root, ['delete', eventId as string])
+        return gcal(calendar, ['delete', eventId as string])
       },
     },
   ]
 }
 
 /** Run the calendar script with the given subcommand and arguments; a failure becomes an error result. */
-function gcal(root: string, args: string[]): Promise<string> {
+function gcal(calendar: CalendarCommand, args: string[]): Promise<string> {
   return new Promise((done, fail) => {
-    execFile(GCAL_PYTHON, [GCAL_SCRIPT, ...args], { cwd: root, timeout: 30_000 }, (error, stdout, stderr) => {
+    execFile(calendar.python, [calendar.script, ...args], { cwd: calendar.cwd, timeout: 30_000 }, (error, stdout, stderr) => {
       if (error !== null) fail(new Error(`${stdout}${stderr}`.trim() || error.message))
       else done(stdout)
     })

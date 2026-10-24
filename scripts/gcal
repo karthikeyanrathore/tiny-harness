@@ -1,0 +1,5 @@
+#!/bin/bash
+# Add, list or delete Google Calendar events; run with no arguments for usage.
+# Runs in the project folder, where credentials.json and token.json live.
+cd "$(dirname "$0")/.." || exit 1
+exec .venv/bin/python3 scripts/gcal_tool.py "$@"

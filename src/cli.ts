@@ -4,6 +4,7 @@
  * set LLM_BASE_URL, LLM_MODEL, LLM_API_KEY to change it.
  * Reads prompts (and approval answers) line by line from stdin, so it also works with piped input.
  */
+import { execFileSync } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { builtinTools, currentDirectory } from './builtin.ts'
@@ -68,8 +69,21 @@ const width = () => process.stdout.columns || 80
 const height = () => process.stdout.rows || 24
 
 /** Draw the status line on the terminal's last row, leaving the cursor where it was. */
+/** The git branch of the folder the tools work in, or '' outside a repository or on a detached HEAD. */
+function gitBranch(): string {
+  try {
+    return execFileSync('git', ['branch', '--show-current'], { cwd: currentDirectory(session, root), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  } catch {
+    return ''
+  }
+}
+
+/** Looked up once per prompt rather than on every key, since drawStatus runs after each keypress. */
+let branch = ''
+
 function drawStatus() {
-  const status = dim(`  session: ${sessionId} · model: ${agent.model} · "exit" to quit`.slice(0, width()))
+  const branchPart = branch === '' ? '' : ` · branch: ${branch}`
+  const status = dim(`  session: ${sessionId}${branchPart} · model: ${agent.model} · "exit" to quit`.slice(0, width()))
   process.stdout.write(`\x1b7\x1b[${height()};1H\x1b[2K${status}\x1b8`)
 }
 
@@ -82,6 +96,7 @@ function pinStatus() {
 /** In a terminal, the prompt sits between two dim rules, like Claude Code's input box. */
 async function readPrompt(): Promise<string | undefined> {
   if (!process.stdout.isTTY) return readLine('> ')
+  branch = gitBranch()
   const rule = dim('─'.repeat(width()))
   process.stdout.write(`${rule}\n\n${rule}\x1b[1A\r`)
   const input = await readLine('> ', () => process.stdout.write(`\x1b7\x1b[1B\r${rule}\x1b8`))
@@ -91,8 +106,9 @@ async function readPrompt(): Promise<string | undefined> {
 }
 
 if (process.stdout.isTTY) {
-  // Two new lines make sure the cursor ends up on a blank row inside the scroll region.
-  process.stdout.write('\n\n\x1b[1A')
+  // Start at the bottom, like Claude Code: a screenful of new lines moves what was on screen into the
+  // scrollback and leaves the cursor on the last blank row of the scroll region.
+  process.stdout.write(`${'\n'.repeat(height())}\x1b[1A`)
   pinStatus()
   process.stdout.on('resize', pinStatus)
   // Give the whole screen back to the shell on the way out, even after Ctrl+C or a crash.
