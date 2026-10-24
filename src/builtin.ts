@@ -24,7 +24,10 @@ export function currentDirectory(session: Session, root: string): string {
   return session.cwd ?? realpathSync(root)
 }
 
-export function builtinTools(root: string, session: Session): ToolDefinition[] {
+/** How the calendar tools run their script: the program, the script it runs, and the folder to run it in. */
+export type CalendarCommand = { python: string; script: string; cwd: string }
+
+export function builtinTools(root: string, session: Session, calendar: CalendarCommand = { python: GCAL_PYTHON, script: GCAL_SCRIPT, cwd: PROJECT_DIR }): ToolDefinition[] {
   root = realpathSync(root)
   const cwd = () => currentDirectory(session, root)
 
@@ -115,7 +118,7 @@ export function builtinTools(root: string, session: Session): ToolDefinition[] {
         required: ['summary', 'startTime', 'endTime'],
       },
       execute({ summary, startTime, endTime, description }) {
-        return gcal(['add', summary as string, startTime as string, endTime as string, (description as string | undefined) ?? ''])
+        return gcal(calendar, ['add', summary as string, startTime as string, endTime as string, (description as string | undefined) ?? ''])
       },
     },
     {
@@ -131,7 +134,7 @@ export function builtinTools(root: string, session: Session): ToolDefinition[] {
         required: ['timeMin', 'timeMax'],
       },
       execute({ timeMin, timeMax, query }) {
-        return gcal(['list', timeMin as string, timeMax as string, (query as string | undefined) ?? ''])
+        return gcal(calendar, ['list', timeMin as string, timeMax as string, (query as string | undefined) ?? ''])
       },
     },
     {
@@ -139,16 +142,16 @@ export function builtinTools(root: string, session: Session): ToolDefinition[] {
       description: 'Delete (cancel) an event from the primary Google Calendar by its id, as shown by google_calendar_list_events.',
       parameters: { type: 'object', properties: { eventId: { type: 'string', description: 'Event id' } }, required: ['eventId'] },
       execute({ eventId }) {
-        return gcal(['delete', eventId as string])
+        return gcal(calendar, ['delete', eventId as string])
       },
     },
   ]
 }
 
 /** Run the calendar script with the given subcommand and arguments; a failure becomes an error result. */
-function gcal(args: string[]): Promise<string> {
+function gcal(calendar: CalendarCommand, args: string[]): Promise<string> {
   return new Promise((done, fail) => {
-    execFile(GCAL_PYTHON, [GCAL_SCRIPT, ...args], { cwd: PROJECT_DIR, timeout: 30_000 }, (error, stdout, stderr) => {
+    execFile(calendar.python, [calendar.script, ...args], { cwd: calendar.cwd, timeout: 30_000 }, (error, stdout, stderr) => {
       if (error !== null) fail(new Error(`${stdout}${stderr}`.trim() || error.message))
       else done(stdout)
     })

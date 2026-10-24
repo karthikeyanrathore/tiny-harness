@@ -21,11 +21,33 @@ npm start                              # gemma4:31b-cloud through local Ollama
 npm start -- --resume <session-id>     # continue a saved session
 ```
 
-Type a prompt at `>`, and `exit` to quit. Calls to `bash`, `write_file` and `fetch_url` ask for approval first (`y` to allow).
+Type a prompt at `>`, and `exit` to quit. Tools marked *(approval y/n)* below ask first (`y` to allow).
 
 Try: `what files are in this folder?`, `read package.json`, `run ls -la`, `summarize https://example.com`.
 
 Sessions are saved as `sessions/<session-id>.jsonl`.
+
+## Tools
+
+- [x] **`list_dir`** — list a folder's entries; folders end with `/`.
+- [x] **`read_file`** — read a UTF-8 text file.
+- [x] **`write_file`** *(approval y/n)* — create or overwrite a UTF-8 text file.
+- [x] **`fetch_url`** *(approval y/n)* — fetch an http(s) page and return its text without HTML tags.
+- [x] **`bash`** *(approval y/n)* — run a shell command; a `cd` carries over to later calls and the other tools, but only inside the project.
+- [x] **`google_calendar_add_event`** *(approval y/n)* — add an event to your primary Google Calendar.
+- [x] **`google_calendar_list_events`** — list events between two times, with their ids.
+- [x] **`google_calendar_delete_event`** *(approval y/n)* — delete an event by id.
+
+The calendar tools run `scripts/gcal_tool.py` with the project's `.venv` and need a one-time Google sign-in:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python3 -m pip install --only-binary=cryptography google-api-python-client google-auth-oauthlib
+# put the OAuth "Desktop app" client from Google Cloud Console in credentials.json, then:
+scripts/gcal list 2026-01-01T00:00:00+01:00 2026-01-02T00:00:00+01:00   # opens the browser once, saves token.json
+```
+
+`credentials.json` and `token.json` are git-ignored.
 
 ## How it works
 
@@ -37,7 +59,7 @@ Sessions are saved as `sessions/<session-id>.jsonl`.
 flowchart TD
     A(["npm start → node src/cli.ts"]) --> B["Read --resume id, pick session file"]
     B --> C["new Session(path) — log.ts<br/>load .jsonl, close any interrupted turn"]
-    C --> D["builtinTools(root, session) → tools.register()<br/>list_dir · read_file · write_file · fetch_url · bash"]
+    C --> D["builtinTools(root, session) → tools.register()<br/>list_dir · read_file · write_file · fetch_url · bash<br/>google_calendar_add / list / delete"]
     D --> E["Register plugins on hooks — plugins.ts<br/>approval · truncate · stats"]
     E --> F[/"readLine('> ')"/]
 
@@ -83,7 +105,7 @@ sequenceDiagram
         end
         loop each tool call in the reply
             Turn->>Hooks: run "pre-execute" with call, allow = true
-            Note over Hooks: approval asks y/N for bash, write_file, fetch_url
+            Note over Hooks: approval asks y/N for the tools marked (approval y/n)
             Hooks-->>Turn: decision
             alt allowed
                 Turn->>Tools: execute(call)

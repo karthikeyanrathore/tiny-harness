@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -189,6 +189,64 @@ describe('2. tool registry', () => {
     assert.ok(tools.schemas().some(s => s.name === 'extra'))
     dispose()
     assert.ok(!tools.schemas().some(s => s.name === 'extra'))
+  })
+})
+
+/** Calendar tools wired to a fake script that prints the arguments and folder it ran with, or fails for event id "missing". */
+function calendarSetup() {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tiny-harness-gcal-')))
+  const project = join(dir, 'project')
+  mkdirSync(project)
+  const script = join(dir, 'fake-gcal.js')
+  writeFileSync(script, [
+    'const args = process.argv.slice(2)',
+    "if (args[1] === 'missing') { console.error('An error occurred: <HttpError 404>'); process.exit(1) }",
+    'console.log(JSON.stringify({ args, cwd: process.cwd() }))',
+  ].join('\n'))
+  const session = new Session(join(dir, 'sessions', 's.jsonl'))
+  const tools = new ToolRegistry()
+  for (const tool of builtinTools(dir, session, { python: process.execPath, script, cwd: project })) tools.register(tool)
+  return { dir, project, tools }
+}
+
+/** What the fake calendar script was run with. */
+function ranWith(content: string): { args: string[]; cwd: string } {
+  return JSON.parse(content)
+}
+
+describe('2b. calendar tools', () => {
+  test('add passes the event to the script in order, in the project folder', async () => {
+    const { tools, project } = calendarSetup()
+    const args = { summary: 'Shopping', startTime: '2026-05-19T14:00:00+02:00', endTime: '2026-05-19T16:00:00+02:00' }
+    const result = await tools.execute({ id: '1', name: 'google_calendar_add_event', args })
+    assert.equal(result.isError, false)
+    assert.deepEqual(ranWith(result.content), { args: ['add', 'Shopping', '2026-05-19T14:00:00+02:00', '2026-05-19T16:00:00+02:00', ''], cwd: project })
+    const described = await tools.execute({ id: '2', name: 'google_calendar_add_event', args: { ...args, description: 'shoes' } })
+    assert.deepEqual(ranWith(described.content).args.slice(-1), ['shoes'])
+  })
+
+  test('list and delete pass their arguments to the script', async () => {
+    const { tools } = calendarSetup()
+    const listed = await tools.execute({ id: '1', name: 'google_calendar_list_events', args: { timeMin: '2026-05-19T00:00:00+02:00', timeMax: '2026-05-20T00:00:00+02:00', query: 'Shopping' } })
+    assert.deepEqual(ranWith(listed.content).args, ['list', '2026-05-19T00:00:00+02:00', '2026-05-20T00:00:00+02:00', 'Shopping'])
+    const deleted = await tools.execute({ id: '2', name: 'google_calendar_delete_event', args: { eventId: 'abc123' } })
+    assert.deepEqual(ranWith(deleted.content).args, ['delete', 'abc123'])
+  })
+
+  test('event text reaches the script unchanged and is never run as a command', async () => {
+    const { tools, dir, project } = calendarSetup()
+    const summary = `"; touch pwned; echo " $(touch pwned2) \`touch pwned3\``
+    const result = await tools.execute({ id: '1', name: 'google_calendar_add_event', args: { summary, startTime: 'a', endTime: 'b' } })
+    assert.equal(ranWith(result.content).args[1], summary)
+    for (const name of ['pwned', 'pwned2', 'pwned3']) {
+      assert.ok(!existsSync(join(dir, name)) && !existsSync(join(project, name)), `${name} was created`)
+    }
+  })
+
+  test('a failing script becomes an error result with its message', async () => {
+    const { tools } = calendarSetup()
+    const result = await tools.execute({ id: '1', name: 'google_calendar_delete_event', args: { eventId: 'missing' } })
+    assert.deepEqual(result, { content: 'An error occurred: <HttpError 404>', isError: true })
   })
 })
 
