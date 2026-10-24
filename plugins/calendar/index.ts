@@ -1,13 +1,13 @@
 /**
- * Google Calendar add-on: add, list and delete events through gcal_tool.py, which needs a Python with the
- * Google libraries. The tools are only offered once that Python exists, so an add-on that was never set up
+ * Google Calendar plugin: add, list and delete events through gcal_tool.py, which needs a Python with the
+ * Google libraries. The tools are only offered once that Python exists, so a plugin that was never set up
  * adds nothing to what the model sees. /install-gcal runs the guided setup from the prompt.
  */
 import { execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Addon } from '../../src/addons.ts'
+import type { Plugin } from '../../src/plugins.ts'
 import type { ToolDefinition } from '../../src/tools.ts'
 
 /** How the tools run their script: the program, the script it runs, and the folder to run it in. */
@@ -28,7 +28,7 @@ function defaultCommand(): CalendarCommand {
   return { python: join(project, '.venv', 'bin', 'python3'), script, cwd: project }
 }
 
-export default function calendar(command: CalendarCommand = defaultCommand()): Addon {
+export default function calendar(command: CalendarCommand = defaultCommand()): Plugin {
   return {
     tools: existsSync(command.python) ? calendarTools(command) : [],
     needsApproval: ['google_calendar_add_event', 'google_calendar_delete_event'],

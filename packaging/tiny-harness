@@ -1,8 +1,8 @@
 #!/bin/sh
 # Launcher installed as /usr/bin/tiny-harness: runs the harness with the bundled Node and keeps per-user
-# files in the XDG folders (sessions in data; add-ons keep their own files in data and config subfolders).
+# files in the XDG folders (sessions in data; plugins keep their own files in data and config subfolders).
 LIB=/usr/lib/tiny-harness
-CALENDAR="$LIB/addons/calendar"
+CALENDAR="$LIB/plugins/calendar"
 export TINY_HARNESS_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/tiny-harness"
 export TINY_HARNESS_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tiny-harness"
 
@@ -13,7 +13,7 @@ Usage:
   tiny-harness                      start the harness in the current folder
   tiny-harness --resume <id>        continue a saved session
 
-Inside the harness, /help lists commands. With the Calendar add-on (package tiny-harness-calendar):
+Inside the harness, /help lists commands. With the Calendar plugin (package tiny-harness-calendar):
   /install-gcal                     set up Google Calendar (once), at the harness prompt
   tiny-harness calendar-setup       the same, from the shell
   tiny-harness gcal <command>       run the calendar script directly (login, add, list, delete)
@@ -23,7 +23,7 @@ EOF
     ;;
   calendar-setup|gcal)
     if [ ! -x "$CALENDAR/$1" ]; then
-      echo "The Calendar add-on is not installed. Get tiny-harness-calendar_<version>_all.deb from the" >&2
+      echo "The Calendar plugin is not installed. Get tiny-harness-calendar_<version>_all.deb from the" >&2
       echo "releases page and run: sudo apt install ./tiny-harness-calendar_*_all.deb" >&2
       exit 1
     fi

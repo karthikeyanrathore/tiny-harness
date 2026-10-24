@@ -1,5 +1,11 @@
-/** Built-in plugins. Each attaches to hooks and returns a function that detaches it. */
+/**
+ * Plugins. The built-in ones attach to hooks and return a function that detaches them. Optional ones live in
+ * plugins/ (next to src/): each folder with an index.ts is one plugin, whose default export says what it
+ * offers right now. Without a plugins/ folder, as in the core package, only the built-in tools exist.
+ */
+import { existsSync, readdirSync } from 'node:fs'
 import type { Hooks } from './hooks.ts'
+import type { ToolDefinition } from './tools.ts'
 
 /** Ask before running the named tools; a "no" becomes a denied result the model sees. */
 export function approval(hooks: Hooks, ask: (question: string) => Promise<boolean>, tools: string[]): () => void {
@@ -37,4 +43,26 @@ export function stats(hooks: Hooks, print: (line: string) => void): () => void {
   return hooks.on('turn-end', ({ turn, reason, steps, toolCalls }) => {
     print(`[turn ${turn}: ${reason}, ${steps} step(s), ${toolCalls} tool call(s)]`)
   })
+}
+
+export type Plugin = {
+  /** Empty until the plugin is set up, so the model only sees tools that can work. */
+  tools: ToolDefinition[]
+  /** Tool names that ask the user before running. */
+  needsApproval: string[]
+  /** Slash commands typed at the prompt, by name without the slash, e.g. 'install-gcal'. */
+  commands: Record<string, () => Promise<void>>
+}
+
+/** Load every plugin. Call it again after a command to pick up what that command set up. */
+export async function loadPlugins(dir: URL = new URL('../plugins/', import.meta.url)): Promise<Plugin[]> {
+  if (!existsSync(dir)) return []
+  const plugins: Plugin[] = []
+  for (const name of readdirSync(dir).sort()) {
+    const index = new URL(`${name}/index.ts`, dir)
+    if (!existsSync(index)) continue
+    const module = await import(index.href) as { default: () => Plugin }
+    plugins.push(module.default())
+  }
+  return plugins
 }

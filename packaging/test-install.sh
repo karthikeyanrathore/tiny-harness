@@ -1,6 +1,6 @@
 #!/bin/bash
 # Install the built packages on a clean Ubuntu and check what a new user goes through: first the core alone,
-# then the Calendar add-on up to the Google sign-in (which needs a person and a browser).
+# then the Calendar plugin up to the Google sign-in (which needs a person and a browser).
 # Run as root inside a container: packaging/test-install.sh dist/tiny-harness_<v>_<arch>.deb dist/tiny-harness-calendar_<v>_all.deb
 set -euxo pipefail
 
@@ -8,7 +8,7 @@ set -euxo pipefail
 fails() { if "$@"; then echo "expected this to fail: $*" >&2; return 1; fi; }
 
 CORE=$PWD/$1
-ADDON=$PWD/$2
+PLUGIN=$PWD/$2
 apt-get update -qq
 
 # The core alone: no Python comes with it, and it starts from any folder.
@@ -20,12 +20,12 @@ cd /tmp
 out=$(echo exit | tiny-harness)
 grep -q '^session: ' <<<"$out"
 fails tiny-harness calendar-setup 2>err.txt
-grep -q 'Calendar add-on is not installed' err.txt
+grep -q 'Calendar plugin is not installed' err.txt
 out=$(printf '/install-gcal\n' | tiny-harness)
-grep -q 'No add-on provides /install-gcal' <<<"$out"
+grep -q 'No plugin provides /install-gcal' <<<"$out"
 
-# The add-on: before setup the calendar points the user to calendar-setup.
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$ADDON"
+# The plugin: before setup the calendar points the user to calendar-setup.
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$PLUGIN"
 fails tiny-harness gcal list a b 2>err.txt
 grep -q 'calendar-setup' err.txt
 
@@ -38,7 +38,7 @@ grep -q 'No file given' err.txt
 fails tiny-harness gcal list 2026-01-01T00:00:00Z 2026-01-02T00:00:00Z 2>err.txt
 grep -q 'Not signed in' err.txt
 
-# The harness still starts with the add-on loaded.
+# The harness still starts with the plugin loaded.
 out=$(echo exit | tiny-harness)
 grep -q '^session: ' <<<"$out"
 

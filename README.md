@@ -13,7 +13,7 @@ tiny-harness                                  # start it in any folder
 
 Sessions are kept in `~/.local/share/tiny-harness/sessions`. Remove it with `sudo apt remove tiny-harness`.
 
-### Optional: Google Calendar add-on
+### Optional: Google Calendar plugin
 
 Only if you want the model to manage your calendar. It brings Python and the Google libraries, so it is a separate package (`_all` works on every CPU):
 
@@ -57,11 +57,11 @@ Sessions are saved as `sessions/<session-id>.jsonl`.
 - [x] **`fetch_url`** *(approval y/n)* — fetch an http(s) page and return its text without HTML tags.
 - [x] **`bash`** *(approval y/n)* — run a shell command; a `cd` carries over to later calls and the other tools, but only inside the project.
 
-### Add-ons
+### Plugins
 
-Optional tools live in `addons/<name>/`. The harness loads each `addons/<name>/index.ts` at startup; an add-on that is not set up offers no tools. Add-ons can bring commands, typed at the prompt with a leading `/` (`/help` lists them); after a command the add-ons are loaded again, so a finished setup works at once. The core package ships without `addons/`.
+Optional tools live in `plugins/<name>/`. The harness loads each `plugins/<name>/index.ts` at startup; a plugin that is not set up offers no tools. Plugins can bring commands, typed at the prompt with a leading `/` (`/help` lists them); after a command the plugins are loaded again, so a finished setup works at once. The core package ships without `plugins/`.
 
-**Calendar** (`addons/calendar/`), set up with **`/install-gcal`**:
+**Calendar** (`plugins/calendar/`), set up with **`/install-gcal`**:
 
 - [x] **`google_calendar_add_event`** *(approval y/n)* — add an event to your primary Google Calendar.
 - [x] **`google_calendar_list_events`** — list events between two times, with their ids.
@@ -71,9 +71,9 @@ From source, `/install-gcal` works the same way but uses the project's `.venv`, 
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python3 -m pip install --only-binary=cryptography -r addons/calendar/requirements.txt
+.venv/bin/python3 -m pip install --only-binary=cryptography -r plugins/calendar/requirements.txt
 # put the OAuth "Desktop app" client from Google Cloud Console in credentials.json, then:
-addons/calendar/gcal login   # opens the browser once, saves token.json
+plugins/calendar/gcal login   # opens the browser once, saves token.json
 ```
 
 `credentials.json` and `token.json` are git-ignored.
@@ -88,8 +88,8 @@ addons/calendar/gcal login   # opens the browser once, saves token.json
 flowchart TD
     A(["npm start → node src/cli.ts"]) --> B["Read --resume id, pick session file"]
     B --> C["new Session(path) — log.ts<br/>load .jsonl, close any interrupted turn"]
-    C --> D["builtinTools(root, session) → tools.register()<br/>list_dir · read_file · write_file · fetch_url · bash<br/>+ tools from addons/ (loadAddons)"]
-    D --> E["Register plugins on hooks — plugins.ts<br/>approval · truncate · stats"]
+    C --> D["builtinTools(root, session) → tools.register()<br/>list_dir · read_file · write_file · fetch_url · bash<br/>+ tools from plugins/ (loadPlugins)"]
+    D --> E["Register built-in plugins on hooks — plugins.ts<br/>approval · truncate · stats"]
     E --> F[/"readLine('> ')"/]
 
     F -->|"exit / end of input"| Z(["process.exit"])
@@ -191,7 +191,7 @@ npm run typecheck
 
 ```sh
 scripts/build-deb.sh amd64    # or arm64; writes dist/tiny-harness_<version>_<arch>.deb
-                              # and the add-on dist/tiny-harness-calendar_<version>_all.deb
+                              # and the plugin dist/tiny-harness-calendar_<version>_all.deb
 ```
 
-The `release` workflow builds them for amd64 and arm64, installs them on clean Ubuntu 22.04 and 24.04 (`packaging/test-install.sh`: the core alone first, checking no Python comes with it, then the add-on), and on a `v*` tag publishes them as a GitHub release. To release: bump `version` in `package.json`, then `git tag v<version> && git push origin v<version>`.
+The `release` workflow builds them for amd64 and arm64, installs them on clean Ubuntu 22.04 and 24.04 (`packaging/test-install.sh`: the core alone first, checking no Python comes with it, then the plugin), and on a `v*` tag publishes them as a GitHub release. To release: bump `version` in `package.json`, then `git tag v<version> && git push origin v<version>`.

@@ -8,13 +8,12 @@ import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
-import { loadAddons } from './addons.ts'
 import { builtinTools, currentDirectory } from './builtin.ts'
 import { Hooks } from './hooks.ts'
 import { OpenAiCompatibleLlm } from './llm.ts'
 import { Session } from './log.ts'
 import { runTurn } from './loop.ts'
-import { approval, stats, truncate } from './plugins.ts'
+import { approval, loadPlugins, stats, truncate } from './plugins.ts'
 import { ToolRegistry } from './tools.ts'
 
 const resumeAt = process.argv.indexOf('--resume')
@@ -46,18 +45,18 @@ const root = process.cwd()
 const session = new Session(sessionPath)
 const tools = new ToolRegistry()
 for (const tool of builtinTools(root, session)) tools.register(tool)
-let addons = await loadAddons()
-let removeAddonTools = registerAddonTools()
+let plugins = await loadPlugins()
+let removePluginTools = registerPluginTools()
 
-/** Register what the add-ons offer now; returns a function that takes those tools away again. */
-function registerAddonTools(): () => void {
-  const removers = addons.flatMap(addon => addon.tools.map(tool => tools.register(tool)))
+/** Register what the plugins offer now; returns a function that takes those tools away again. */
+function registerPluginTools(): () => void {
+  const removers = plugins.flatMap(plugin => plugin.tools.map(tool => tools.register(tool)))
   return () => { for (const remove of removers) remove() }
 }
 const hooks = new Hooks()
 // Bold yellow header in a terminal, so approval prompts stand out from the model's text.
 const highlight = (question: string) => process.stdout.isTTY ? question.replace(/^.*/, header => `\x1b[1;33m${header}\x1b[0m`) : question
-approval(hooks, async question => /^y(es)?$/i.test((await readLine(highlight(question))) ?? ''), ['bash', 'write_file', 'fetch_url', ...addons.flatMap(addon => addon.needsApproval)])
+approval(hooks, async question => /^y(es)?$/i.test((await readLine(highlight(question))) ?? ''), ['bash', 'write_file', 'fetch_url', ...plugins.flatMap(plugin => plugin.needsApproval)])
 truncate(hooks, 2000)
 stats(hooks, line => console.log(line))
 
@@ -129,19 +128,19 @@ if (process.stdout.isTTY) {
   console.log(`session: ${sessionId}  model: ${agent.model}  (type "exit" to quit)`)
 }
 /**
- * A line starting with "/" is a command for the harness, not a prompt: /help, or one an add-on brings, such
+ * A line starting with "/" is a command for the harness, not a prompt: /help, or one a plugin brings, such
  * as /install-gcal. A command may ask its own questions, so it gets the terminal to itself; afterwards the
- * add-ons are loaded again, so whatever it set up can be used straight away.
+ * plugins are loaded again, so whatever it set up can be used straight away.
  */
 async function runCommand(name: string): Promise<void> {
-  const commands: Record<string, () => Promise<void>> = Object.assign({}, ...addons.map(addon => addon.commands))
+  const commands: Record<string, () => Promise<void>> = Object.assign({}, ...plugins.map(plugin => plugin.commands))
   if (name === 'help') {
     console.log(['/help', ...Object.keys(commands).map(command => `/${command}`)].join('\n'))
     return
   }
   const command = commands[name]
   if (command === undefined) {
-    console.log(`No add-on provides /${name}. Add-ons are separate packages; install the one you need first (see the README). /help lists the commands you have.`)
+    console.log(`No plugin provides /${name}. Plugins are separate packages; install the one you need first (see the README). /help lists the commands you have.`)
     return
   }
   rl.pause()
@@ -152,9 +151,9 @@ async function runCommand(name: string): Promise<void> {
     if (process.stdin.isTTY) process.stdin.setRawMode(true)
     rl.resume()
   }
-  removeAddonTools()
-  addons = await loadAddons()
-  removeAddonTools = registerAddonTools()
+  removePluginTools()
+  plugins = await loadPlugins()
+  removePluginTools = registerPluginTools()
 }
 
 while (true) {

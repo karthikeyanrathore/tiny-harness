@@ -6,8 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { pathToFileURL } from 'node:url'
-import calendar, { calendarTools } from '../addons/calendar/index.ts'
-import { loadAddons } from '../src/addons.ts'
+import calendar, { calendarTools } from '../plugins/calendar/index.ts'
 import { builtinTools, currentDirectory } from '../src/builtin.ts'
 import { Hooks } from '../src/hooks.ts'
 import { OpenAiCompatibleLlm, toWire } from '../src/llm.ts'
@@ -15,7 +14,7 @@ import type { Llm, LlmReply, LlmRequest } from '../src/llm.ts'
 import { Session } from '../src/log.ts'
 import type { LogEntry } from '../src/log.ts'
 import { runTurn } from '../src/loop.ts'
-import { approval, stats, truncate } from '../src/plugins.ts'
+import { approval, loadPlugins, stats, truncate } from '../src/plugins.ts'
 import { ToolRegistry } from '../src/tools.ts'
 
 /** Replays a fixed list of replies and records every request it receives. */
@@ -216,25 +215,25 @@ function ranWith(content: string): { args: string[]; cwd: string } {
   return JSON.parse(content)
 }
 
-describe('2a. add-ons', () => {
-  test('without an addons folder the harness has no add-ons', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tiny-harness-addons-'))
-    assert.deepEqual(await loadAddons(pathToFileURL(join(dir, 'addons/'))), [])
+describe('2a. plugins', () => {
+  test('without a plugins folder the harness has no plugins', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tiny-harness-plugins-'))
+    assert.deepEqual(await loadPlugins(pathToFileURL(join(dir, 'plugins/'))), [])
   })
 
-  test('each addons/<name>/index.ts is loaded with its tools, approvals and commands', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tiny-harness-addons-'))
+  test('each plugins/<name>/index.ts is loaded with its tools, approvals and commands', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tiny-harness-plugins-'))
     mkdirSync(join(dir, 'greet'))
     writeFileSync(join(dir, 'greet', 'index.ts'), "export default () => ({ tools: [{ name: 'hello', description: 'x', parameters: { type: 'object', properties: {} }, execute: async () => 'hi' }], needsApproval: ['hello'], commands: { 'install-greet': async () => {} } })")
     mkdirSync(join(dir, 'no-index'))
-    const addons = await loadAddons(pathToFileURL(`${dir}/`))
-    assert.deepEqual(addons.map(a => ({ tools: a.tools.map(t => t.name), needsApproval: a.needsApproval, commands: Object.keys(a.commands) })), [
+    const plugins = await loadPlugins(pathToFileURL(`${dir}/`))
+    assert.deepEqual(plugins.map(a => ({ tools: a.tools.map(t => t.name), needsApproval: a.needsApproval, commands: Object.keys(a.commands) })), [
       { tools: ['hello'], needsApproval: ['hello'], commands: ['install-greet'] },
     ])
   })
 
   test('loading again picks up what a command set up', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tiny-harness-addons-'))
+    const dir = mkdtempSync(join(tmpdir(), 'tiny-harness-plugins-'))
     const marker = join(dir, 'set-up')
     mkdirSync(join(dir, 'greet'))
     writeFileSync(join(dir, 'greet', 'index.ts'), [
@@ -244,14 +243,14 @@ describe('2a. add-ons', () => {
       "export default () => ({ tools: existsSync(marker) ? [hello] : [], needsApproval: [], commands: { 'install-greet': async () => writeFileSync(marker, '') } })",
     ].join('\n'))
     const url = pathToFileURL(`${dir}/`)
-    const [before] = await loadAddons(url)
+    const [before] = await loadPlugins(url)
     assert.deepEqual(before?.tools, [])
     await before?.commands['install-greet']?.()
-    const [after] = await loadAddons(url)
+    const [after] = await loadPlugins(url)
     assert.deepEqual(after?.tools.map(t => t.name), ['hello'])
   })
 
-  test('the calendar add-on offers /install-gcal always, and its tools only once its Python exists', () => {
+  test('the calendar plugin offers /install-gcal always, and its tools only once its Python exists', () => {
     const script = join(tmpdir(), 'gcal_tool.py')
     const notSetUp = calendar({ python: join(tmpdir(), 'no-such-venv', 'python3'), script, cwd: tmpdir() })
     assert.deepEqual(notSetUp.tools, [])

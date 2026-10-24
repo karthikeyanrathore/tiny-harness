@@ -9,5 +9,5 @@
     "erasableSyntaxOnly": true,
     "types": ["node"]
   },
-  "include": ["src", "addons", "tests"]
+  "include": ["src", "plugins", "tests"]
 }
