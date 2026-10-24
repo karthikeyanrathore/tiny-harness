@@ -19,10 +19,21 @@ const sessionId = resumeAt === -1 ? new Date().toISOString().replace(/[:.]/g, '-
 if (sessionId === undefined) throw new Error('--resume needs a session id')
 const sessionPath = fileURLToPath(new URL(`../sessions/${sessionId}.jsonl`, import.meta.url))
 
-const lines = createInterface({ input: process.stdin, output: process.stdout })[Symbol.asyncIterator]()
-async function readLine(prompt: string): Promise<string | undefined> {
-  process.stdout.write(prompt)
+const rl = createInterface({ input: process.stdin, output: process.stdout })
+const lines = rl[Symbol.asyncIterator]()
+async function readLine(prompt: string, redraw = () => {}): Promise<string | undefined> {
+  // readline must know the prompt's last line, or editing (e.g. backspace) redraws the line without it.
+  const at = prompt.lastIndexOf('\n') + 1
+  process.stdout.write(prompt.slice(0, at))
+  rl.setPrompt(prompt.slice(at))
+  rl.prompt()
+  // Each readline redraw (the prompt itself, then every key) clears everything below the cursor, so put back
+  // what lives there: the caller's part and the status line.
+  const after = () => { redraw(); if (process.stdout.isTTY) drawStatus() }
+  after()
+  process.stdin.on('keypress', after)
   const next = await lines.next()
+  process.stdin.off('keypress', after)
   return next.done === true ? undefined : next.value
 }
 
@@ -31,7 +42,9 @@ const session = new Session(sessionPath)
 const tools = new ToolRegistry()
 for (const tool of builtinTools(root, session)) tools.register(tool)
 const hooks = new Hooks()
-approval(hooks, async question => /^y(es)?$/i.test((await readLine(question)) ?? ''), ['bash', 'write_file', 'fetch_url'])
+// Bold yellow header in a terminal, so approval prompts stand out from the model's text.
+const highlight = (question: string) => process.stdout.isTTY ? question.replace(/^.*/, header => `\x1b[1;33m${header}\x1b[0m`) : question
+approval(hooks, async question => /^y(es)?$/i.test((await readLine(highlight(question))) ?? ''), ['bash', 'write_file', 'fetch_url', 'google_calendar_add_event', 'google_calendar_delete_event'])
 truncate(hooks, 2000)
 stats(hooks, line => console.log(line))
 
@@ -47,12 +60,48 @@ const agent = {
   hooks,
   session,
   maxSteps: 10,
-  context: () => `Current directory: ${currentDirectory(session, root)}`,
+  context: () => `Current directory: ${currentDirectory(session, root)}\nCurrent local time: ${new Date().toString()}`,
 }
 
-console.log(`session: ${sessionId}  model: ${agent.model}  (type "exit" to quit)`)
+const dim = (text: string) => `\x1b[2m${text}\x1b[0m`
+const width = () => process.stdout.columns || 80
+const height = () => process.stdout.rows || 24
+
+/** Draw the status line on the terminal's last row, leaving the cursor where it was. */
+function drawStatus() {
+  const status = dim(`  session: ${sessionId} · model: ${agent.model} · "exit" to quit`.slice(0, width()))
+  process.stdout.write(`\x1b7\x1b[${height()};1H\x1b[2K${status}\x1b8`)
+}
+
+/** Keep the last row for the status line: everything else scrolls in the rows above it. */
+function pinStatus() {
+  process.stdout.write(`\x1b7\x1b[1;${height() - 1}r\x1b8`)
+  drawStatus()
+}
+
+/** In a terminal, the prompt sits between two dim rules, like Claude Code's input box. */
+async function readPrompt(): Promise<string | undefined> {
+  if (!process.stdout.isTTY) return readLine('> ')
+  const rule = dim('─'.repeat(width()))
+  process.stdout.write(`${rule}\n\n${rule}\x1b[1A\r`)
+  const input = await readLine('> ', () => process.stdout.write(`\x1b7\x1b[1B\r${rule}\x1b8`))
+  process.stdout.write(`\x1b[J${rule}\n`)
+  drawStatus()
+  return input
+}
+
+if (process.stdout.isTTY) {
+  // Two new lines make sure the cursor ends up on a blank row inside the scroll region.
+  process.stdout.write('\n\n\x1b[1A')
+  pinStatus()
+  process.stdout.on('resize', pinStatus)
+  // Give the whole screen back to the shell on the way out, even after Ctrl+C or a crash.
+  process.on('exit', () => process.stdout.write(`\x1b7\x1b[r\x1b[${height()};1H\x1b[2K\x1b8`))
+} else {
+  console.log(`session: ${sessionId}  model: ${agent.model}  (type "exit" to quit)`)
+}
 while (true) {
-  const input = await readLine('> ')
+  const input = await readPrompt()
   if (input === undefined || input.trim() === 'exit') break
   if (input.trim() === '') continue
   console.log(await runTurn(agent, input))
