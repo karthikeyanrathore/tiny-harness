@@ -5,6 +5,7 @@
  * Reads prompts (and approval answers) line by line from stdin, so it also works with piped input.
  */
 import { execFileSync } from 'node:child_process'
+import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { builtinTools, currentDirectory } from './builtin.ts'
@@ -18,7 +19,9 @@ import { ToolRegistry } from './tools.ts'
 const resumeAt = process.argv.indexOf('--resume')
 const sessionId = resumeAt === -1 ? new Date().toISOString().replace(/[:.]/g, '-') : process.argv[resumeAt + 1]
 if (sessionId === undefined) throw new Error('--resume needs a session id')
-const sessionPath = fileURLToPath(new URL(`../sessions/${sessionId}.jsonl`, import.meta.url))
+// The installed package keeps sessions in the user's data folder; a checkout keeps them in the project.
+const sessionsDir = process.env.TINY_HARNESS_DATA_DIR === undefined ? fileURLToPath(new URL('../sessions', import.meta.url)) : join(process.env.TINY_HARNESS_DATA_DIR, 'sessions')
+const sessionPath = join(sessionsDir, `${sessionId}.jsonl`)
 
 const rl = createInterface({ input: process.stdin, output: process.stdout })
 const lines = rl[Symbol.asyncIterator]()

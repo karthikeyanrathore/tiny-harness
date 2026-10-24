@@ -2,7 +2,19 @@
 
 A minimal coding-agent harness: a model chooses tools, the harness runs them, and every step is recorded in an append-only session log.
 
-## Requirements
+## Install on Ubuntu
+
+Download the `.deb` for your CPU (`amd64` for most PCs, `arm64` for ARM machines) from the [latest release](https://github.com/karthikeyanrathore/tiny-harness/releases/latest), then:
+
+```sh
+sudo apt install ./tiny-harness_*_amd64.deb   # Ubuntu 22.04 or later; brings its own Node.js
+tiny-harness                                  # start it in any folder
+tiny-harness calendar-setup                   # once, to use Google Calendar: a guided 5-minute setup
+```
+
+`calendar-setup` installs the Google libraries for your user, walks you through creating your own free Google OAuth client, and signs you in. Sessions are kept in `~/.local/share/tiny-harness/sessions`, the Google sign-in in `~/.config/tiny-harness`. Remove it with `sudo apt remove tiny-harness`.
+
+## Requirements (from source)
 
 - Node.js 22.18+ (runs the `.ts` files directly, no build step)
 - [Ollama](https://ollama.com) with a model that supports tool calls, or any OpenAI-compatible API
@@ -38,13 +50,13 @@ Sessions are saved as `sessions/<session-id>.jsonl`.
 - [x] **`google_calendar_list_events`** — list events between two times, with their ids.
 - [x] **`google_calendar_delete_event`** *(approval y/n)* — delete an event by id.
 
-The calendar tools run `scripts/gcal_tool.py` with the project's `.venv` and need a one-time Google sign-in:
+From source, the calendar tools run `scripts/gcal_tool.py` with the project's `.venv` and need a one-time Google sign-in (the installed package does this with `tiny-harness calendar-setup`):
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python3 -m pip install --only-binary=cryptography google-api-python-client google-auth-oauthlib
+.venv/bin/python3 -m pip install --only-binary=cryptography -r scripts/requirements.txt
 # put the OAuth "Desktop app" client from Google Cloud Console in credentials.json, then:
-scripts/gcal list 2026-01-01T00:00:00+01:00 2026-01-02T00:00:00+01:00   # opens the browser once, saves token.json
+scripts/gcal login   # opens the browser once, saves token.json
 ```
 
 `credentials.json` and `token.json` are git-ignored.
@@ -157,3 +169,11 @@ LLM_API_KEY=sk-... npm start                         # a hosted API
 npm test         # offline; uses scripted model replies and a mock HTTP server
 npm run typecheck
 ```
+
+## Build the Ubuntu package
+
+```sh
+scripts/build-deb.sh amd64    # or arm64; writes dist/tiny-harness_<version>_<arch>.deb
+```
+
+The `release` workflow builds both, installs each on clean Ubuntu 22.04 and 24.04 (`packaging/test-install.sh`), and on a `v*` tag publishes them as a GitHub release. To release: bump `version` in `package.json`, then `git tag v<version> && git push origin v<version>`.

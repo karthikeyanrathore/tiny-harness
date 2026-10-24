@@ -1,0 +1,81 @@
+#!/bin/bash
+# Guided Google Calendar setup, run as `tiny-harness calendar-setup`. Safe to run again: each step is
+# skipped when it is already done. The launcher sets TINY_HARNESS_DATA_DIR and TINY_HARNESS_CONFIG_DIR.
+set -euo pipefail
+
+LIB=/usr/lib/tiny-harness
+VENV="$TINY_HARNESS_DATA_DIR/venv"
+CONFIG="$TINY_HARNESS_CONFIG_DIR"
+
+bold() { printf '\n\033[1m%s\033[0m\n' "$1"; }
+
+bold "Step 1 of 3: install the Google libraries"
+if "$VENV/bin/python3" -c 'import googleapiclient, google_auth_oauthlib' 2>/dev/null; then
+  echo "Already installed in $VENV."
+else
+  echo "Installing into $VENV (only for your user; takes about a minute)..."
+  python3 -m venv "$VENV"
+  "$VENV/bin/python3" -m pip install --quiet --disable-pip-version-check --only-binary=:all: -r "$LIB/scripts/requirements.txt"
+  echo "Done."
+fi
+
+bold "Step 2 of 3: connect your own Google Cloud app"
+if [ -f "$CONFIG/credentials.json" ]; then
+  echo "Already have $CONFIG/credentials.json."
+else
+  cat <<'EOF'
+Google needs an OAuth client that belongs to you. It is free and takes about 5 minutes.
+Sign in to the Google account whose calendar you want to use, then:
+
+  1. Create a project (any name):
+       https://console.cloud.google.com/projectcreate
+  2. Turn on the Calendar API for it (click "Enable"):
+       https://console.cloud.google.com/apis/library/calendar-json.googleapis.com
+  3. Set up the consent screen (click "Get started"): any app name, your email,
+     Audience "External":
+       https://console.cloud.google.com/auth/overview
+     Then add your own Gmail address under "Test users":
+       https://console.cloud.google.com/auth/audience
+  4. Create the client: "Create client", Application type "Desktop app", "Create",
+     then "Download JSON":
+       https://console.cloud.google.com/auth/clients
+EOF
+  default=$(ls -t "$HOME"/Downloads/client_secret_*.json 2>/dev/null | head -n 1 || true)
+  echo
+  if ! read -r -p "Path to the downloaded JSON file${default:+ [$default]}: " path; then
+    echo; echo "No file given. Run 'tiny-harness calendar-setup' again when you have it." >&2
+    exit 1
+  fi
+  path=${path:-$default}
+  path=${path/#\~/$HOME}
+  if [ ! -f "$path" ]; then
+    echo "File not found: ${path:-(none)}. Run 'tiny-harness calendar-setup' again with the right path." >&2
+    exit 1
+  fi
+  if ! python3 -c 'import json, sys; sys.exit(0 if "installed" in json.load(open(sys.argv[1])) else 1)' "$path" 2>/dev/null; then
+    echo "That file is not a \"Desktop app\" client. Create one with Application type \"Desktop app\" (step 4)." >&2
+    exit 1
+  fi
+  install -m 600 "$path" "$CONFIG/credentials.json"
+  echo "Saved as $CONFIG/credentials.json."
+fi
+
+bold "Step 3 of 3: sign in"
+cd "$CONFIG"
+if "$VENV/bin/python3" "$LIB/scripts/gcal_tool.py" list "$(date -Iseconds)" "$(date -Iseconds -d '+1 day')" >/dev/null 2>&1; then
+  echo "Already signed in."
+else
+  cat <<'EOF'
+A browser window opens (or open the link printed below). Choose your account. Google warns that
+it "hasn't verified this app": that is your own app, so click "Continue", then allow calendar access.
+EOF
+  "$VENV/bin/python3" "$LIB/scripts/gcal_tool.py" login
+fi
+
+bold "All set"
+cat <<'EOF'
+Start the harness and ask, for example: "add lunch with Sam tomorrow at 13:00".
+
+While your Google app is in "Testing", Google ends the sign-in after 7 days and you run step 3
+again with: tiny-harness calendar-setup. To avoid that, click "Publish app" on the Audience page.
+EOF

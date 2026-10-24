@@ -13,11 +13,12 @@ import type { ToolDefinition } from './tools.ts'
 /** Printed after each bash command so the harness learns the folder the shell ended in. */
 const CWD_MARK = '__TINY_HARNESS_CWD__'
 
-/** The calendar script; it runs in the project folder, where credentials.json and token.json live. */
+/** The calendar script. */
 const GCAL_SCRIPT = fileURLToPath(new URL('../scripts/gcal_tool.py', import.meta.url))
-/** The project venv's Python, which has the Google client libraries installed. */
-const GCAL_PYTHON = fileURLToPath(new URL('../.venv/bin/python3', import.meta.url))
-const PROJECT_DIR = fileURLToPath(new URL('..', import.meta.url))
+/** A Python with the Google client libraries: the installed package's venv, else the project's .venv. */
+const GCAL_PYTHON = process.env.TINY_HARNESS_PYTHON ?? fileURLToPath(new URL('../.venv/bin/python3', import.meta.url))
+/** Where credentials.json and token.json live: the installed package's config folder, else the project folder. */
+const GCAL_DIR = process.env.TINY_HARNESS_CONFIG_DIR ?? fileURLToPath(new URL('..', import.meta.url))
 
 /** The folder every tool works in: the last one recorded in the log, else `root`. */
 export function currentDirectory(session: Session, root: string): string {
@@ -27,7 +28,7 @@ export function currentDirectory(session: Session, root: string): string {
 /** How the calendar tools run their script: the program, the script it runs, and the folder to run it in. */
 export type CalendarCommand = { python: string; script: string; cwd: string }
 
-export function builtinTools(root: string, session: Session, calendar: CalendarCommand = { python: GCAL_PYTHON, script: GCAL_SCRIPT, cwd: PROJECT_DIR }): ToolDefinition[] {
+export function builtinTools(root: string, session: Session, calendar: CalendarCommand = { python: GCAL_PYTHON, script: GCAL_SCRIPT, cwd: GCAL_DIR }): ToolDefinition[] {
   root = realpathSync(root)
   const cwd = () => currentDirectory(session, root)
 
@@ -152,7 +153,9 @@ export function builtinTools(root: string, session: Session, calendar: CalendarC
 function gcal(calendar: CalendarCommand, args: string[]): Promise<string> {
   return new Promise((done, fail) => {
     execFile(calendar.python, [calendar.script, ...args], { cwd: calendar.cwd, timeout: 30_000 }, (error, stdout, stderr) => {
-      if (error !== null) fail(new Error(`${stdout}${stderr}`.trim() || error.message))
+      // ENOENT: the Python (or its folder) is missing, which means the libraries were never installed.
+      if (error?.code === 'ENOENT') fail(new Error(`Google Calendar is not set up yet (${calendar.python} not found). Run: tiny-harness calendar-setup`))
+      else if (error !== null) fail(new Error(`${stdout}${stderr}`.trim() || error.message))
       else done(stdout)
     })
   })

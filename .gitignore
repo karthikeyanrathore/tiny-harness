@@ -3,3 +3,4 @@ sessions/
 credentials.json
 token.json
 .venv/
+dist/

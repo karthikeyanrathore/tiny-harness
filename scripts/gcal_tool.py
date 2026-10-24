@@ -2,6 +2,7 @@ import datetime
 import os.path
 import sys
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -11,25 +12,36 @@ from googleapiclient.errors import HttpError
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
+SETUP_HINT = "Run: tiny-harness calendar-setup (or scripts/gcal login in a checkout)"
+
+def login():
+    """Signs in through the browser once and saves token.json; needs credentials.json from Google Cloud Console."""
+    if not os.path.exists('credentials.json'):
+        print(f"No credentials.json in {os.getcwd()}. {SETUP_HINT}", file=sys.stderr)
+        sys.exit(1)
+    flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+    creds = flow.run_local_server(port=0)
+    with open('token.json', 'w') as token:
+        token.write(creds.to_json())
+    os.chmod('token.json', 0o600)
+    print("Signed in to Google Calendar.")
+
 def get_calendar_service():
+    """Uses the saved sign-in, refreshing it if needed. Never opens a browser: the harness would hang waiting."""
     creds = None
-    # The file token.json stores the user's access and refresh tokens, and is
-    # created automatically when the authorization flow completes for the first time.
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-    
-    # If there are no (valid) credentials available, let the user log in.
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
+    if creds and not creds.valid and creds.expired and creds.refresh_token:
+        try:
             creds.refresh(Request())
+        except RefreshError:
+            creds = None
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
-        # Save the credentials for the next run
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
-
+            with open('token.json', 'w') as token:
+                token.write(creds.to_json())
+    if not creds or not creds.valid:
+        print(f"Not signed in to Google Calendar, or the sign-in expired. {SETUP_HINT}", file=sys.stderr)
+        sys.exit(1)
     return build('calendar', 'v3', credentials=creds)
 
 def add_event(summary, start_time, end_time, description=None, location=None):
@@ -85,6 +97,7 @@ def delete_event(event_id):
         sys.exit(1)
 
 USAGE = """Usage:
+  gcal_tool.py login
   gcal_tool.py add 'Event Name' START END ['Description']
   gcal_tool.py list TIME_MIN TIME_MAX ['search text']
   gcal_tool.py delete EVENT_ID
@@ -92,7 +105,9 @@ Times are RFC 3339 with an offset, e.g. 2026-05-19T14:00:00+02:00"""
 
 if __name__ == '__main__':
     command, args = (sys.argv[1], sys.argv[2:]) if len(sys.argv) > 1 else ('', [])
-    if command == 'add' and len(args) >= 3:
+    if command == 'login' and not args:
+        login()
+    elif command == 'add' and len(args) >= 3:
         add_event(args[0], args[1], args[2], args[3] if len(args) > 3 and args[3] else None)
     elif command == 'list' and len(args) >= 2:
         list_events(args[0], args[1], args[2] if len(args) > 2 and args[2] else None)
