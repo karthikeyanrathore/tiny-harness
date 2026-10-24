@@ -143,7 +143,7 @@ describe('2. tool registry', () => {
   test('schemas carry only name, description and parameters', () => {
     const { tools } = setup()
     for (const schema of tools.schemas()) assert.deepEqual(Object.keys(schema), ['name', 'description', 'parameters'])
-    assert.deepEqual(tools.schemas().map(s => s.name), ['bash', 'fetch_url', 'list_dir', 'read_file', 'write_file'])
+    assert.deepEqual(tools.schemas().map(s => s.name), ['bash', 'fetch_url', 'google_calendar_add_event', 'google_calendar_delete_event', 'google_calendar_list_events', 'list_dir', 'read_file', 'write_file'])
   })
 
   test('bad calls become error results instead of throwing', async () => {
@@ -308,7 +308,7 @@ describe('5. hooks and plugins', () => {
     const asked: string[] = []
     approval(hooks, async question => { asked.push(question); return false }, ['bash'])
     assert.equal(await runTurn(agent, 'run echo hi'), 'ok, not running it')
-    assert.deepEqual(asked, ['Allow bash {"command":"echo hi"}? [y/N] '])
+    assert.deepEqual(asked, ['┌ Approve bash?\n│ command:  echo hi\n└ [y/N] '])
     assert.deepEqual(llm.requests[1]?.messages.at(-1), { role: 'tool', toolCallId: `c${callCount}`, name: 'bash', content: 'denied: the user declined this call', isError: true })
     assert.equal(session.entries.at(-1)?.type, 'turn_end')
   })
@@ -348,7 +348,7 @@ describe('5. hooks and plugins', () => {
     const { agent, hooks } = setup(llm)
     hooks.on('request', request => ({ ...request, tools: request.tools.filter(tool => tool.name !== 'list_dir') }))
     await runTurn(agent, 'list files')
-    assert.deepEqual(llm.requests[0]?.tools.map(tool => tool.name), ['bash', 'fetch_url', 'read_file', 'write_file'])
+    assert.deepEqual(llm.requests[0]?.tools.map(tool => tool.name), ['bash', 'fetch_url', 'google_calendar_add_event', 'google_calendar_delete_event', 'google_calendar_list_events', 'read_file', 'write_file'])
   })
 
   test('a disposed listener stops running', async () => {

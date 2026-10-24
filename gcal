@@ -1,0 +1,3 @@
+#!/bin/bash
+# Add, list or delete Google Calendar events; run with no arguments for usage.
+exec "$(dirname "$0")/.venv/bin/python3" "$(dirname "$0")/scripts/gcal_tool.py" "$@"

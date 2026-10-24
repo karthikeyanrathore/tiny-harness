@@ -6,11 +6,17 @@ import { execFile } from 'node:child_process'
 import { realpathSync } from 'node:fs'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Session } from './log.ts'
 import type { ToolDefinition } from './tools.ts'
 
 /** Printed after each bash command so the harness learns the folder the shell ended in. */
 const CWD_MARK = '__TINY_HARNESS_CWD__'
+
+/** Adds a Google Calendar event; reads credentials.json and token.json from the project root. */
+const GCAL_SCRIPT = fileURLToPath(new URL('../scripts/gcal_tool.py', import.meta.url))
+/** The project venv's Python, which has the Google client libraries installed. */
+const GCAL_PYTHON = fileURLToPath(new URL('../.venv/bin/python3', import.meta.url))
 
 /** The folder every tool works in: the last one recorded in the log, else `root`. */
 export function currentDirectory(session: Session, root: string): string {
@@ -94,7 +100,58 @@ export function builtinTools(root: string, session: Session): ToolDefinition[] {
         })
       },
     },
+    {
+      name: 'google_calendar_add_event',
+      description: 'Add an event to the primary Google Calendar.',
+      parameters: {
+        type: 'object',
+        properties: {
+          summary: { type: 'string', description: 'Event title' },
+          startTime: { type: 'string', description: 'Start time in RFC 3339 format with the local UTC offset, e.g. 2026-05-19T14:00:00+02:00' },
+          endTime: { type: 'string', description: 'End time in RFC 3339 format with the local UTC offset, e.g. 2026-05-19T16:00:00+02:00' },
+          description: { type: 'string', description: 'Optional event description' },
+        },
+        required: ['summary', 'startTime', 'endTime'],
+      },
+      execute({ summary, startTime, endTime, description }) {
+        return gcal(root, ['add', summary as string, startTime as string, endTime as string, (description as string | undefined) ?? ''])
+      },
+    },
+    {
+      name: 'google_calendar_list_events',
+      description: 'List events in the primary Google Calendar between two times, with their ids. Use it to find the id of an event to delete.',
+      parameters: {
+        type: 'object',
+        properties: {
+          timeMin: { type: 'string', description: 'Start of the range in RFC 3339 format with the local UTC offset, e.g. 2026-05-19T00:00:00+02:00' },
+          timeMax: { type: 'string', description: 'End of the range in RFC 3339 format with the local UTC offset, e.g. 2026-05-20T00:00:00+02:00' },
+          query: { type: 'string', description: 'Optional text to search for in the events' },
+        },
+        required: ['timeMin', 'timeMax'],
+      },
+      execute({ timeMin, timeMax, query }) {
+        return gcal(root, ['list', timeMin as string, timeMax as string, (query as string | undefined) ?? ''])
+      },
+    },
+    {
+      name: 'google_calendar_delete_event',
+      description: 'Delete (cancel) an event from the primary Google Calendar by its id, as shown by google_calendar_list_events.',
+      parameters: { type: 'object', properties: { eventId: { type: 'string', description: 'Event id' } }, required: ['eventId'] },
+      execute({ eventId }) {
+        return gcal(root, ['delete', eventId as string])
+      },
+    },
   ]
+}
+
+/** Run the calendar script with the given subcommand and arguments; a failure becomes an error result. */
+function gcal(root: string, args: string[]): Promise<string> {
+  return new Promise((done, fail) => {
+    execFile(GCAL_PYTHON, [GCAL_SCRIPT, ...args], { cwd: root, timeout: 30_000 }, (error, stdout, stderr) => {
+      if (error !== null) fail(new Error(`${stdout}${stderr}`.trim() || error.message))
+      else done(stdout)
+    })
+  })
 }
 
 /** Crude HTML to text: drop script/style, strip tags, decode common entities, collapse blank space. */
