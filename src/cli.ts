@@ -91,8 +91,9 @@ async function readPrompt(): Promise<string | undefined> {
 }
 
 if (process.stdout.isTTY) {
-  // Two new lines make sure the cursor ends up on a blank row inside the scroll region.
-  process.stdout.write('\n\n\x1b[1A')
+  // Start at the bottom, like Claude Code: a screenful of new lines moves what was on screen into the
+  // scrollback and leaves the cursor on the last blank row of the scroll region.
+  process.stdout.write(`${'\n'.repeat(height())}\x1b[1A`)
   pinStatus()
   process.stdout.on('resize', pinStatus)
   // Give the whole screen back to the shell on the way out, even after Ctrl+C or a crash.
