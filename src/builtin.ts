@@ -3,9 +3,9 @@
  * starts at `root`. A `cd` inside bash moves it, but only to folders inside `root`.
  */
 import { execFile } from 'node:child_process'
-import { realpathSync } from 'node:fs'
+import { readlinkSync, realpathSync } from 'node:fs'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { Session } from './log.ts'
 import type { ToolDefinition } from './tools.ts'
 
@@ -15,6 +15,32 @@ const CWD_MARK = '__TINY_HARNESS_CWD__'
 /** The folder every tool works in: the last one recorded in the log, else `root`. */
 export function currentDirectory(session: Session, root: string): string {
   return session.cwd ?? realpathSync(root)
+}
+
+/**
+ * The real file `path` names from the current directory, with every symlink followed, when it is outside
+ * `root`; undefined when it is inside. A file tool would read or write exactly this file.
+ */
+export function outsideRoot(session: Session, root: string, path: string): string | undefined {
+  const realRoot = realpathSync(root)
+  const target = realTarget(resolve(currentDirectory(session, realRoot), path))
+  const rel = relative(realRoot, target)
+  return isAbsolute(rel) || rel.split(sep)[0] === '..' ? target : undefined
+}
+
+/** Follow symlinks as far as the path exists, including a symlink to a missing file; a missing tail stays as written. */
+function realTarget(path: string, hops = 0): string {
+  try {
+    return realpathSync(path)
+  } catch {}
+  // A dangling symlink: writing to it creates the file it points to.
+  if (hops < 40) {
+    try {
+      return realTarget(resolve(dirname(path), readlinkSync(path)), hops + 1)
+    } catch {}
+  }
+  const parent = dirname(path)
+  return parent === path ? path : join(realTarget(parent, hops), basename(path))
 }
 
 export function builtinTools(root: string, session: Session): ToolDefinition[] {

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Install the built packages on a clean Ubuntu and check what a new user goes through: first the core alone,
 # then the Calendar plugin up to the Google sign-in (which needs a person and a browser).
-# Run as root inside a container: packaging/test-install.sh dist/tiny-harness_<v>_<arch>.deb dist/tiny-harness-calendar_<v>_all.deb
+# Run as root inside a container: debian/test-install.sh dist/tiny-harness_<v>_<arch>.deb dist/tiny-harness-calendar_<v>_all.deb
 set -euxo pipefail
 
 # `! cmd` would not stop the script under set -e, so expected failures go through this.

@@ -33,6 +33,8 @@ export default function calendar(command: CalendarCommand = defaultCommand()): P
     tools: existsSync(command.python) ? calendarTools(command) : [],
     needsApproval: ['google_calendar_add_event', 'google_calendar_delete_event'],
     commands: { 'install-gcal': install },
+    // The id alone says nothing, so the approval prompt also shows the event it stands for.
+    describe: { google_calendar_delete_event: async ({ eventId }) => ({ eventId: `${eventId as string}  ${(await gcal(command, ['get', eventId as string])).trim()}` }) },
   }
 }
 

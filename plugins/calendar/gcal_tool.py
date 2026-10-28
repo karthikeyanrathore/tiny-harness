@@ -86,6 +86,18 @@ def list_events(time_min, time_max, query=None):
         print(f"An error occurred: {error}", file=sys.stderr)
         sys.exit(1)
 
+def get_event(event_id):
+    """Prints one event's title and times, so the user can see what an id stands for before deleting it."""
+    try:
+        service = get_calendar_service()
+        event = service.events().get(calendarId='primary', eventId=event_id).execute()
+        start = event['start'].get('dateTime', event['start'].get('date'))
+        end = event['end'].get('dateTime', event['end'].get('date'))
+        print(f"{event.get('summary', '(no title)')} ({start} - {end})")
+    except HttpError as error:
+        print(f"An error occurred: {error}", file=sys.stderr)
+        sys.exit(1)
+
 def delete_event(event_id):
     """Deletes one event from the primary Google Calendar."""
     try:
@@ -100,6 +112,7 @@ USAGE = """Usage:
   gcal_tool.py login
   gcal_tool.py add 'Event Name' START END ['Description']
   gcal_tool.py list TIME_MIN TIME_MAX ['search text']
+  gcal_tool.py get EVENT_ID
   gcal_tool.py delete EVENT_ID
 Times are RFC 3339 with an offset, e.g. 2026-05-19T14:00:00+02:00"""
 
@@ -111,6 +124,8 @@ if __name__ == '__main__':
         add_event(args[0], args[1], args[2], args[3] if len(args) > 3 and args[3] else None)
     elif command == 'list' and len(args) >= 2:
         list_events(args[0], args[1], args[2] if len(args) > 2 and args[2] else None)
+    elif command == 'get' and len(args) == 1:
+        get_event(args[0])
     elif command == 'delete' and len(args) == 1:
         delete_event(args[0])
     else:

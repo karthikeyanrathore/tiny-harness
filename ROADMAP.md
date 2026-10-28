@@ -20,7 +20,7 @@ flowchart LR
 - [ ] **Don't crash on a model error.** Catch errors from `runTurn` in `cli.ts`, print them, and keep the session open.
 - [ ] **Retries.** Retry failed model requests a few times with backoff for network errors and 5xx. *(dsh: `agent/request-error` hook, `llm/llm-retry`)*
 - [ ] **Log the system prompt.** Right now it is the only thing the model sees that isn't in the log. *(dsh rule: "model-visible means logged")*
-- [ ] **Keep file tools inside the project.** `read_file` and `write_file` accept `../` and absolute paths. Apply the same check `cd` uses.
+- [x] **Keep file tools inside the project.** A path that leads outside the project, through `../`, an absolute path or a symlink, asks first and shows the real target.
 - [ ] **Raise the 2,000-character output limit.** Long files and web pages lose most of their content. Raise it, or save big outputs to a file and give the model a pointer. *(dsh: `spill`)*
 - [ ] **Show the folder in the approval prompt**, e.g. `Allow bash in src/: rm -rf build?`
 - [ ] **Print the answer before the stats line.** The `turn-end` hook currently fires first.
@@ -61,7 +61,7 @@ flowchart LR
 **Goal:** you can leave the agent running without approving every command.
 **Done when:** safe commands run without asking, dangerous ones are blocked by rule, and bash can't touch files outside the project.
 
-- [ ] **Policy rules.** For example: always allow `ls`, never allow `rm -rf`. *(dsh: `guard`, `ToolGuard`)*
+- [x] **Policy rules.** For example: always allow `ls`, never allow `rm -rf`. *(dsh: `guard`, `ToolGuard`)*
 - [ ] **Sandbox.** Run bash in a restricted environment such as macOS `sandbox-exec` or a container. *(dsh: `sandbox`)*
 - [ ] **API key storage.** Keys currently come only from environment variables. *(dsh: `credentials`)*
 

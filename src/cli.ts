@@ -5,15 +5,18 @@
  * Reads prompts (and approval answers) line by line from stdin, so it also works with piped input.
  */
 import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
-import { builtinTools, currentDirectory } from './builtin.ts'
+import { builtinTools, currentDirectory, outsideRoot } from './builtin.ts'
 import { Hooks } from './hooks.ts'
 import { OpenAiCompatibleLlm } from './llm.ts'
 import { Session } from './log.ts'
 import { runTurn } from './loop.ts'
-import { approval, loadPlugins, stats, truncate } from './plugins.ts'
+import { approval, loadPlugins, outsideProject, stats, truncate } from './plugins.ts'
+import type { Rules } from './plugins.ts'
 import { ToolRegistry } from './tools.ts'
 
 const resumeAt = process.argv.indexOf('--resume')
@@ -56,7 +59,15 @@ function registerPluginTools(): () => void {
 const hooks = new Hooks()
 // Bold yellow header in a terminal, so approval prompts stand out from the model's text.
 const highlight = (question: string) => process.stdout.isTTY ? question.replace(/^.*/, header => `\x1b[1;33m${header}\x1b[0m`) : question
-approval(hooks, async question => /^y(es)?$/i.test((await readLine(highlight(question))) ?? ''), ['bash', 'write_file', 'fetch_url', ...plugins.flatMap(plugin => plugin.needsApproval)])
+// Bash commands that run without asking or never run, e.g. { "allow": ["ls", "git status"], "deny": ["rm -rf"] }.
+const rulesPath = join(homedir(), '.config', 'tiny-harness', 'rules.json')
+const rules: Rules = { allow: [], deny: [], ...(existsSync(rulesPath) ? JSON.parse(readFileSync(rulesPath, 'utf8')) as Partial<Rules> : {}) }
+const ask = async (question: string) => /^y(es)?$/i.test((await readLine(highlight(question))) ?? '')
+// File tools work silently inside the project, but ask first wherever a path or symlink leads outside it.
+outsideProject(hooks, ask, ['read_file', 'list_dir', 'write_file'], path => outsideRoot(session, root, path))
+approval(hooks, ask, ['bash', 'write_file', 'fetch_url', ...plugins.flatMap(plugin => plugin.needsApproval)], rules,
+  // Looked up from the current plugins on each call, since a command loads them again.
+  call => Object.assign({}, ...plugins.map(plugin => plugin.describe))[call.name]?.(call.args))
 truncate(hooks, 2000)
 stats(hooks, line => console.log(line))
 
@@ -128,14 +139,23 @@ if (process.stdout.isTTY) {
   console.log(`session: ${sessionId}  model: ${agent.model}  (type "exit" to quit)`)
 }
 /**
- * A line starting with "/" is a command for the harness, not a prompt: /help, or one a plugin brings, such
+ * A line starting with "/" is a command for the harness, not a prompt: /help, /clear, or one a plugin brings, such
  * as /install-gcal. A command may ask its own questions, so it gets the terminal to itself; afterwards the
  * plugins are loaded again, so whatever it set up can be used straight away.
  */
 async function runCommand(name: string): Promise<void> {
   const commands: Record<string, () => Promise<void>> = Object.assign({}, ...plugins.map(plugin => plugin.commands))
   if (name === 'help') {
-    console.log(['/help', ...Object.keys(commands).map(command => `/${command}`)].join('\n'))
+    console.log(['/help', '/clear', ...Object.keys(commands).map(command => `/${command}`)].join('\n'))
+    return
+  }
+  if (name === 'clear') {
+    // Wipe the screen and its scrollback, then start again at the bottom. The session and what the model
+    // remembers are kept.
+    if (process.stdout.isTTY) {
+      process.stdout.write(`\x1b[2J\x1b[3J\x1b[${height() - 1};1H`)
+      pinStatus()
+    }
     return
   }
   const command = commands[name]
