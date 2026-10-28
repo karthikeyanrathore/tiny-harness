@@ -28,4 +28,4 @@ Type a prompt at `>`, `/help` for commands, and `exit` to quit.
 - [Rules](docs/rules.md) — allow and deny rules for skipping or blocking approvals
 - [Models](docs/models.md) — use a local model or another OpenAI-compatible API
 - [How it works](docs/architecture.md) — startup, the prompt loop, and one turn
-- [Roadmap](ROADMAP.md)
+- [Roadmap](docs/roadmap.md) — what is planned next, phase by phase

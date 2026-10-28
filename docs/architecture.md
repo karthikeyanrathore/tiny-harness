@@ -15,7 +15,7 @@ flowchart TD
     F -->|"exit / end of input"| Z(["process.exit"])
     F -->|"prompt"| RT[["runTurn(agent, input) — loop.ts<br/>see the sequence diagram below"]]
     RT -->|"returns the answer"| P["print answer"] --> F
-    RT -->|"throws on a model error"| CRASH(["CLI crashes — see ROADMAP.md"])
+    RT -->|"throws on a model error"| CRASH(["CLI crashes — see roadmap.md"])
 
     LOG[("sessions/SESSION_ID.jsonl<br/>append-only log")]
     C -.->|read| LOG
