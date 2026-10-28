@@ -2,11 +2,11 @@
 
 ## Startup and prompt loop
 
-`src/cli.ts` sets everything up once, then calls `runTurn` for each prompt. Dotted arrows are reads and writes to the session log.
+`tiny-harness/src/cli.ts` sets everything up once, then calls `runTurn` for each prompt. Dotted arrows are reads and writes to the session log.
 
 ```mermaid
 flowchart TD
-    A(["npm start → node src/cli.ts"]) --> B["Read --resume id, pick session file"]
+    A(["npm start → node tiny-harness/src/cli.ts"]) --> B["Read --resume id, pick session file"]
     B --> C["new Session(path) — log.ts<br/>load .jsonl, close any interrupted turn"]
     C --> D["builtinTools(root, session) → tools.register()<br/>list_dir · read_file · write_file · fetch_url · bash<br/>+ tools from plugins/ (loadPlugins)"]
     D --> E["Register built-in plugins on hooks — plugins.ts<br/>outsideProject · approval + rules · truncate · stats"]
@@ -17,7 +17,7 @@ flowchart TD
     RT -->|"returns the answer"| P["print answer"] --> F
     RT -->|"throws on a model error"| CRASH(["CLI crashes — see roadmap.md"])
 
-    LOG[("sessions/SESSION_ID.jsonl<br/>append-only log")]
+    LOG[("tiny-harness/sessions/SESSION_ID.jsonl<br/>append-only log")]
     C -.->|read| LOG
     RT -.->|"read + append"| LOG
 ```

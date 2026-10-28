@@ -14,8 +14,8 @@ case "$ARCH" in
 esac
 
 cd "$(dirname "$0")/.."
-VERSION=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' package.json)
-[ -n "$VERSION" ] || { echo "no version in package.json" >&2; exit 1; }
+VERSION=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' tiny-harness/package.json)
+[ -n "$VERSION" ] || { echo "no version in tiny-harness/package.json" >&2; exit 1; }
 MAINTAINER="karthikeyan_01 <karthikerathore@gmail.com>"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -35,8 +35,8 @@ LIB="$CORE/usr/lib/tiny-harness"
 mkdir -p "$CORE/DEBIAN" "$CORE/usr/bin" "$LIB/node/bin" "$LIB/src" "$CORE/usr/share/doc/tiny-harness"
 install -m 755 "$WORK/node-$NODE_VERSION-linux-$NODE_ARCH/bin/node" "$LIB/node/bin/node"
 install -m 644 "$WORK/node-$NODE_VERSION-linux-$NODE_ARCH/LICENSE" "$LIB/node/LICENSE"
-install -m 644 package.json "$LIB/package.json"
-install -m 644 src/*.ts "$LIB/src/"
+install -m 644 tiny-harness/package.json "$LIB/package.json"
+install -m 644 tiny-harness/src/*.ts "$LIB/src/"
 install -m 755 debian/tiny-harness "$CORE/usr/bin/tiny-harness"
 install -m 644 README.md "$CORE/usr/share/doc/tiny-harness/README.md"
 mkdir -p "$CORE/usr/share/doc/tiny-harness/docs" && install -m 644 docs/*.md "$CORE/usr/share/doc/tiny-harness/docs/"
@@ -61,8 +61,8 @@ CONTROL
 PLUGIN="$WORK/calendar"
 PLUGIN_LIB="$PLUGIN/usr/lib/tiny-harness/plugins/calendar"
 mkdir -p "$PLUGIN/DEBIAN" "$PLUGIN_LIB"
-install -m 644 plugins/calendar/index.ts plugins/calendar/gcal_tool.py plugins/calendar/requirements.txt "$PLUGIN_LIB/"
-install -m 755 plugins/calendar/gcal plugins/calendar/calendar-setup "$PLUGIN_LIB/"
+install -m 644 tiny-harness/plugins/calendar/index.ts tiny-harness/plugins/calendar/gcal_tool.py tiny-harness/plugins/calendar/requirements.txt "$PLUGIN_LIB/"
+install -m 755 tiny-harness/plugins/calendar/gcal tiny-harness/plugins/calendar/calendar-setup "$PLUGIN_LIB/"
 cat > "$PLUGIN/DEBIAN/control" <<CONTROL
 Package: tiny-harness-calendar
 Version: $VERSION

@@ -24,19 +24,20 @@ Long values show their first 20 lines. Control characters (escape codes, carriag
 
 ## Plugins
 
-Optional tools live in `plugins/<name>/`. The harness loads each `plugins/<name>/index.ts` at startup; a plugin that is not set up offers no tools. Plugins can bring commands, typed at the prompt with a leading `/` (`/help` lists them); after a command the plugins are loaded again, so a finished setup works at once. The core package ships without `plugins/`.
+Optional tools live in `tiny-harness/plugins/<name>/`. The harness loads each `plugins/<name>/index.ts` at startup; a plugin that is not set up offers no tools. Plugins can bring commands, typed at the prompt with a leading `/` (`/help` lists them); after a command the plugins are loaded again, so a finished setup works at once. The core package ships without `plugins/`.
 
 ### Calendar
 
-`plugins/calendar/`, set up with **`/install-gcal`** (see [Install](install.md#optional-google-calendar-plugin)):
+`tiny-harness/plugins/calendar/`, set up with **`/install-gcal`** (see [Install](install.md#optional-google-calendar-plugin)):
 
 - [x] **`google_calendar_add_event`** *(approval y/n)* — add an event to your primary Google Calendar.
 - [x] **`google_calendar_list_events`** — list events between two times, with their ids.
 - [x] **`google_calendar_delete_event`** *(approval y/n)* — delete an event by id; the approval prompt shows its title and time.
 
-From source, `/install-gcal` works the same way but uses the project's `.venv`, with `credentials.json` and `token.json` in the project folder. By hand:
+From source, `/install-gcal` works the same way but uses `tiny-harness/.venv`, with `credentials.json` and `token.json` in `tiny-harness/`. By hand:
 
 ```sh
+cd tiny-harness
 python3 -m venv .venv
 .venv/bin/python3 -m pip install --only-binary=cryptography -r plugins/calendar/requirements.txt
 # put the OAuth "Desktop app" client from Google Cloud Console in credentials.json, then:

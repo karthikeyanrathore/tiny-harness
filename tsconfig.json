@@ -9,5 +9,5 @@
     "erasableSyntaxOnly": true,
     "types": ["node"]
   },
-  "include": ["src", "plugins", "tests"]
+  "include": ["tiny-harness", "tests"]
 }
