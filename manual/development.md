@@ -2,7 +2,7 @@
 
 ## Layout
 
-`tiny-harness/` holds everything the app needs to run: `src/`, `plugins/` and its own `package.json` (with the version). Copy that folder anywhere and run `node src/cli.ts` in it. The rest of the repository is for development: `tests/`, `docs/`, `debian/` and `scripts/` for the packages, and the top-level `package.json` with the test and typecheck scripts.
+`tiny-harness/` holds everything the app needs to run: `src/`, `plugins/` and its own `package.json` (with the version). Copy that folder anywhere and run `node src/cli.ts` in it. The rest of the repository is for development: `tests/`, `manual/`, `debian/` and `scripts/` for the packages, and the top-level `package.json` with the test and typecheck scripts.
 
 ## Requirements
 

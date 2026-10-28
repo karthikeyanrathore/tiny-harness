@@ -39,7 +39,7 @@ install -m 644 tiny-harness/package.json "$LIB/package.json"
 install -m 644 tiny-harness/src/*.ts "$LIB/src/"
 install -m 755 debian/tiny-harness "$CORE/usr/bin/tiny-harness"
 install -m 644 README.md "$CORE/usr/share/doc/tiny-harness/README.md"
-mkdir -p "$CORE/usr/share/doc/tiny-harness/docs" && install -m 644 docs/*.md "$CORE/usr/share/doc/tiny-harness/docs/"
+mkdir -p "$CORE/usr/share/doc/tiny-harness/manual" && install -m 644 manual/*.md "$CORE/usr/share/doc/tiny-harness/manual/"
 cat > "$CORE/DEBIAN/control" <<CONTROL
 Package: tiny-harness
 Version: $VERSION

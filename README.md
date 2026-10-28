@@ -20,12 +20,12 @@ npm start
 
 Type a prompt at `>`, `/help` for commands, and `exit` to quit.
 
-## Docs
+## The tiny-harness manual
 
-- [Install](docs/install.md) — Ubuntu packages and the optional Google Calendar plugin
-- [Development](docs/development.md) — run from source, test, build the packages, release
-- [Tools](docs/tools.md) — built-in tools, approvals, and plugins
-- [Rules](docs/rules.md) — allow and deny rules for skipping or blocking approvals
-- [Models](docs/models.md) — use a local model or another OpenAI-compatible API
-- [How it works](docs/architecture.md) — startup, the prompt loop, and one turn
-- [Roadmap](docs/roadmap.md) — what is planned next, phase by phase
+- [Install](manual/install.md) — Ubuntu packages and the optional Google Calendar plugin
+- [Development](manual/development.md) — run from source, test, build the packages, release
+- [Tools](manual/tools.md) — built-in tools, approvals, and plugins
+- [Rules](manual/rules.md) — allow and deny rules for skipping or blocking approvals
+- [Models](manual/models.md) — use a local model or another OpenAI-compatible API
+- [How it works](manual/architecture.md) — startup, the prompt loop, and one turn
+- [Roadmap](manual/roadmap.md) — what is planned next, phase by phase
